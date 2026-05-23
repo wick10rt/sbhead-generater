@@ -1,0 +1,49 @@
+# ==============================================================
+# sbhead-generater 套件需求
+# 目標 Python：3.10 或 3.11（不建議 3.12+，basicsr/realesrgan 尚未完整支援）
+#
+# 安裝建議順序（本專案使用 conda）：
+#   1. conda create -n sbhead python=3.10 -y
+#   2. conda activate sbhead
+#   3. python -m pip install --upgrade pip
+#   4. 先依顯卡情況安裝 PyTorch（建議用 conda 管，CUDA 工具鏈比較不會踩雷）：
+#      （CPU 版）  conda install pytorch=2.2.2 torchvision=0.17.2 cpuonly -c pytorch -y
+#      （NVIDIA） conda install pytorch=2.2.2 torchvision=0.17.2 pytorch-cuda=11.8 -c pytorch -c nvidia -y
+#         若 conda 找不到指定版本，可改用 pip：
+#         pip install torch==2.2.2 torchvision==0.17.2 --index-url https://download.pytorch.org/whl/cpu
+#   5. pip install -r requirements.txt
+#
+# 註：realesrgan / basicsr / anime-face-detector 都沒有官方 conda 包，必須走 pip。
+#     混用時請務必先 conda activate，再 pip install，這樣 pip 才會把套件裝進 conda env。
+#
+# 已知相容性陷阱：
+#   * basicsr 1.4.2 仍從 torchvision.transforms.functional_tensor import rgb_to_grayscale，
+#     torchvision >= 0.17 已移除該模組 → 因此 torchvision 鎖在 < 0.18，並建議 0.17.x。
+#     若仍出錯，手動把 basicsr/data/degradations.py 中
+#       from torchvision.transforms.functional_tensor import rgb_to_grayscale
+#     改成
+#       from torchvision.transforms.functional import rgb_to_grayscale
+#   * numpy 2.x 與 basicsr / realesrgan 編譯出的舊 wheel 不相容 → 鎖 numpy < 2.0。
+#   * anime-face-detector 依賴 mmcv / mmdet / mmpose，若 pip 直接裝失敗，
+#     請改用：pip install -U openmim && mim install mmcv-full mmdet mmpose
+# ==============================================================
+
+# ---- 核心影像處理 ----
+opencv-python>=4.8.0,<5.0.0
+Pillow>=10.0.0,<11.0.0
+numpy>=1.24.0,<2.0.0
+
+# ---- 深度學習框架 ----
+# 註：torch / torchvision 建議先依顯卡狀況單獨安裝，這裡的版本範圍只作為保險
+torch>=2.0.0,<2.3.0
+torchvision>=0.15.0,<0.18.0
+
+# ---- 超解析度（Real-ESRGAN） ----
+realesrgan>=0.3.0
+basicsr>=1.4.2
+
+# ---- 動漫臉部偵測 ----
+anime-face-detector>=0.0.9
+
+# ---- 其他輔助 ----
+tqdm>=4.65.0
