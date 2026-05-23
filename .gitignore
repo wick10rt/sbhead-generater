@@ -1,0 +1,76 @@
+# ==============================================================
+# sbhead-generater .gitignore
+# ==============================================================
+
+# ---- 模型權重檔（檔案大，不進 git；請依 README 自行下載放回 weights/） ----
+weights/*.pth
+weights/*.pt
+weights/*.onnx
+weights/*.bin
+weights/*.safetensors
+!weights/.gitkeep
+
+# ---- 處理過程與輸出（每次執行都會變動，不需追蹤） ----
+intermediate/*
+!intermediate/.gitkeep
+
+outputs/*
+!outputs/.gitkeep
+
+# ---- 樣本圖：保留資料夾，但不追蹤實際圖片（避免版權問題） ----
+sample_images/*
+!sample_images/.gitkeep
+!sample_images/README.md
+
+# ---- Python 編譯與快取 ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# ---- 虛擬環境 ----
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# ---- 打包與發佈 ----
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+pip-wheel-metadata/
+
+# ---- 測試與覆蓋率 ----
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# ---- 編輯器與 IDE ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.spyderproject
+.spyproject
+
+# ---- 作業系統雜檔 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Jupyter / IPython ----
+.ipynb_checkpoints/
+*.ipynb
+
+# ---- 環境變數與秘密 ----
+.env
+.env.local
+*.secret
