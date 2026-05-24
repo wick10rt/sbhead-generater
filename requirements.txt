@@ -13,19 +13,17 @@
 #         pip install torch==2.2.2 torchvision==0.17.2 --index-url https://download.pytorch.org/whl/cpu
 #   5. pip install -r requirements.txt
 #
-# 註：realesrgan / basicsr / anime-face-detector 都沒有官方 conda 包，必須走 pip。
+# 註：realesrgan / basicsr / imgutils 都沒有官方 conda 包，必須走 pip。
 #     混用時請務必先 conda activate，再 pip install，這樣 pip 才會把套件裝進 conda env。
 #
 # 已知相容性陷阱：
 #   * basicsr 1.4.2 仍從 torchvision.transforms.functional_tensor import rgb_to_grayscale，
 #     torchvision >= 0.17 已移除該模組 → 因此 torchvision 鎖在 < 0.18，並建議 0.17.x。
-#     若仍出錯，手動把 basicsr/data/degradations.py 中
+#     若出錯，手動把 basicsr/data/degradations.py 中
 #       from torchvision.transforms.functional_tensor import rgb_to_grayscale
 #     改成
 #       from torchvision.transforms.functional import rgb_to_grayscale
 #   * numpy 2.x 與 basicsr / realesrgan 編譯出的舊 wheel 不相容 → 鎖 numpy < 2.0。
-#   * anime-face-detector 依賴 mmcv / mmdet / mmpose，若 pip 直接裝失敗，
-#     請改用：pip install -U openmim && mim install mmcv-full mmdet mmpose
 # ==============================================================
 
 # ---- 核心影像處理 ----
@@ -43,7 +41,7 @@ realesrgan>=0.3.0
 basicsr>=1.4.2
 
 # ---- 動漫臉部偵測 ----
-anime-face-detector>=0.0.9
+imgutils>=0.8.0
 
 # ---- 其他輔助 ----
 tqdm>=4.65.0
