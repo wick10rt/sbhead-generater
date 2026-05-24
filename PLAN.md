@@ -67,7 +67,7 @@ sbhead-generater/
 
 - [x] 1.1 寫 `requirements.txt`（OpenCV、Pillow、NumPy、PyTorch、realesrgan、basicsr、imgutils）
 - [x] 1.2 寫 `.gitignore`
-- [!] 1.3 建 conda 虛擬環境並安裝套件（**使用者本機操作**）
+- [x] 1.3 建 conda 虛擬環境並安裝套件
   ```bash
   conda create -n sbhead python=3.10 -y
   conda activate sbhead
@@ -75,16 +75,16 @@ sbhead-generater/
   conda install pytorch=2.2.2 torchvision=0.17.2 pytorch-cuda=11.8 -c pytorch -c nvidia -y
   pip install -r requirements.txt
   ```
-- [!] 1.4 下載 `RealESRGAN_x4plus_anime_6B.pth` 放 `weights/`（**使用者本機操作**）
+- [x] 1.4 下載 `RealESRGAN_x4plus_anime_6B.pth` 放 `weights/`
   - 下載來源：https://github.com/xinntao/Real-ESRGAN/releases
-- [!] 1.5 手改 basicsr 套件原始碼（若出現 `functional_tensor` 錯誤，**使用者本機操作**）
+- [x] 1.5 手改 basicsr 套件原始碼
   ```
   檔案位置：<conda env>/Lib/site-packages/basicsr/data/degradations.py
   將：from torchvision.transforms.functional_tensor import rgb_to_grayscale
   改為：from torchvision.transforms.functional import rgb_to_grayscale
   ```
-- [!] 1.6 放 1～2 張測試圖到 `sample_images/`（**使用者本機操作**）
-- [ ] 1.7 **驗證點**：`python -c "import cv2, torch, realesrgan, imgutils"` 不報錯
+- [x] 1.6 放 1～2 張測試圖到 `sample_images/`
+- [x] 1.7 **驗證點**：`python -c "import cv2, torch, realesrgan, imgutils"` 不報錯
 
 ---
 
@@ -167,3 +167,4 @@ sbhead-generater/
 - 2026-05-16｜1.2｜建立 `.gitignore`。
 - 2026-05-16｜1.3（規範更新）｜使用者指定使用 conda 作為虛擬環境管理工具。
 - 2026-05-24｜全面重新設計｜根據使用者確認，更新設計決策：移除所有 CLI flag（只保留 -i）、移除 intermediate/ 資料夾、改用 dghs-imgutils 取代 anime-face-detector、輸出固定 1024×1024 PNG、SR 依裁切後尺寸自動決定是否執行、臉部偵測失敗直接 sys.exit(1)、輸出命名採自動編號。
+- 2026-05-24｜階段 1 完成｜使用者本機完成 conda 環境、套件安裝、權重下載、basicsr 手改、測試圖放置、驗證指令通過。階段 1 全部勾選完成，可進入階段 2 程式碼開發。
