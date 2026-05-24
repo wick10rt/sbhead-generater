@@ -2,6 +2,29 @@
 
 > 這份計畫由使用者（張胖胖）制定，Claude 必須**嚴格遵循**，不得擅自調整順序或跳階段。
 > 每次 Claude 動工後，必須回報「對應到計畫的哪一步、做了什麼、目前進度」。
+> Claude 可視情況微調執行順序，以能成功運行為第一準則。
+
+---
+
+## 最終設計決策（不可更改）
+
+| 項目 | 決定 |
+|------|------|
+| 介面 | `python main.py -i <圖片路徑>`，無其他 flag |
+| 輸出位置 | `main.py` 同層 `outputs/` 資料夾，自動建立 |
+| 輸出格式 | 固定 PNG，1024×1024 |
+| 輸出命名 | `output.png`、`output(1).png`、`output(2).png`… |
+| 輸入格式 | JPG / JPEG / PNG |
+| 臉部偵測 | dghs-imgutils（`pip install imgutils`） |
+| 偵測失敗 | `sys.exit(1)` + 清楚錯誤訊息，不輸出任何檔案 |
+| Enhance | 永遠自動執行（銳化 + 降噪 + 對比） |
+| SR 條件 | 裁切後尺寸 < 1024 → 跑 Real-ESRGAN；≥ 1024 → 直接 resize |
+| SR 模型 | `RealESRGAN_x4plus_anime_6B.pth`，放 `weights/` |
+| 路徑處理 | pathlib + PIL |
+| 中間結果 | 不儲存 |
+| 平台 | Windows 11 + NVIDIA 4060+ |
+| 程式碼註解 | 繁體中文 |
+| basicsr 修補 | 手改套件原始碼（見 1.5） |
 
 ---
 
@@ -10,81 +33,137 @@
 - `[ ]` 未開始
 - `[~]` 進行中
 - `[x]` 已完成
-- `[!]` 卡住 / 需使用者介入（例如下載權重、放測試圖）
+- `[!]` 卡住 / 需使用者介入
 
 ---
 
-## 階段 1：環境準備（先把難裝的搞定）
+## 資料夾結構（最終版）
 
-> 先處理裝環境，因為這是最容易卡住的地方。等程式都寫完才發現裝不起來會很痛。
-
-- [x] 1.1 寫 `requirements.txt`（OpenCV、Pillow、NumPy、PyTorch、realesrgan、basicsr、anime-face-detector）
-- [x] 1.2 寫 `.gitignore`（忽略 `weights/*.pth`、`outputs/*`、`intermediate/*`、`__pycache__/`、venv 等）
-- [!] 1.3 建 conda 虛擬環境（`conda create -n sbhead python=3.10`）並安裝套件（**使用者本機操作，使用 conda 而非 venv**）
-- [!] 1.4 下載 `RealESRGAN_x4plus_anime_6B.pth` 權重放 `weights/`（**使用者本機操作**）
-- [!] 1.5 放 1～2 張測試圖到 `sample_images/`（**使用者本機操作**）
-- [ ] 1.6 **驗證點**：`python -c "import cv2, torch, realesrgan, anime_face_detector"` 不報錯
+```
+sbhead-generater/
+├── main.py
+├── requirements.txt
+├── README.md
+├── PLAN.md
+├── 計畫書.md
+├── utils/
+│   ├── __init__.py
+│   ├── face_detect.py
+│   ├── crop_avatar.py
+│   ├── enhance.py
+│   ├── super_resolution.py
+│   └── avatar_output.py
+├── weights/
+│   └── RealESRGAN_x4plus_anime_6B.pth  ← gitignored，需自行下載
+├── sample_images/                        ← gitignored，放測試圖
+└── outputs/                              ← gitignored，main.py 自動建立
+```
 
 ---
 
-## 階段 2：建 utils 五個模組（由獨立到串接）
+## 階段 1：環境準備
+
+> 先處理裝環境，因為這是最容易卡住的地方。
+
+- [x] 1.1 寫 `requirements.txt`（OpenCV、Pillow、NumPy、PyTorch、realesrgan、basicsr、imgutils）
+- [x] 1.2 寫 `.gitignore`
+- [!] 1.3 建 conda 虛擬環境並安裝套件（**使用者本機操作**）
+  ```bash
+  conda create -n sbhead python=3.10 -y
+  conda activate sbhead
+  # 依顯卡安裝 PyTorch（NVIDIA）：
+  conda install pytorch=2.2.2 torchvision=0.17.2 pytorch-cuda=11.8 -c pytorch -c nvidia -y
+  pip install -r requirements.txt
+  ```
+- [!] 1.4 下載 `RealESRGAN_x4plus_anime_6B.pth` 放 `weights/`（**使用者本機操作**）
+  - 下載來源：https://github.com/xinntao/Real-ESRGAN/releases
+- [!] 1.5 手改 basicsr 套件原始碼（若出現 `functional_tensor` 錯誤，**使用者本機操作**）
+  ```
+  檔案位置：<conda env>/Lib/site-packages/basicsr/data/degradations.py
+  將：from torchvision.transforms.functional_tensor import rgb_to_grayscale
+  改為：from torchvision.transforms.functional import rgb_to_grayscale
+  ```
+- [!] 1.6 放 1～2 張測試圖到 `sample_images/`（**使用者本機操作**）
+- [ ] 1.7 **驗證點**：`python -c "import cv2, torch, realesrgan, imgutils"` 不報錯
+
+---
+
+## 階段 2：建 utils 五個模組
 
 > 每個模組都能單獨 import 測試，不依賴 main.py。
 
-- [ ] 2.1 `utils/avatar_output.py` — `save_avatar(image, output_path, size, border, circle)`
-  - 最獨立、最好寫，先做完讓後面有地方輸出
-- [ ] 2.2 `utils/enhance.py` — `enhance_image(image)`（銳化＋降噪＋對比）
-- [ ] 2.3 `utils/crop_avatar.py` — `crop_by_bbox`、`center_crop`、`manual_crop`
-- [ ] 2.4 `utils/face_detect.py` — `detect_largest_face(image) -> bbox or None`
-  - 包好 try/except，import 失敗也要能 graceful return None
-- [ ] 2.5 `utils/super_resolution.py` — `upscale_image(image, output_size)`
-  - 包 Real-ESRGAN 模型載入、CPU/GPU 切換、失敗 fallback 到 `cv2.resize`
-- [ ] 2.6 **驗證點**：每個模組寫一個 `if __name__ == "__main__":` 區塊單獨測試
+- [ ] 2.1 `utils/avatar_output.py` — `save_avatar(image, outputs_dir)`
+  - 固定輸出 1024×1024 PNG
+  - 命名規則：`output.png` → `output(1).png` → `output(2).png`…
+  - 自動建立 `outputs/` 資料夾
+
+- [ ] 2.2 `utils/enhance.py` — `enhance_image(image)`
+  - 銳化（unsharp mask）
+  - 降噪（bilateral filter）
+  - 對比度調整（CLAHE）
+  - 保守參數，避免動漫線條變奇怪
+
+- [ ] 2.3 `utils/crop_avatar.py` — `crop_by_bbox(image, bbox)`
+  - 依臉部 bbox 擴大裁切範圍（含頭髮與部分肩膀）
+  - 上方擴展比下方多，符合動漫頭部比例
+  - 裁成正方形，修正超出圖片邊界
+
+- [ ] 2.4 `utils/face_detect.py` — `detect_largest_face(image) -> bbox`
+  - 使用 dghs-imgutils 偵測動漫臉部
+  - 回傳面積最大的臉部 bbox（x0, y0, x1, y1）
+  - 無臉偵測到 → `sys.exit(1)` + 清楚錯誤訊息
+
+- [ ] 2.5 `utils/super_resolution.py` — `upscale_image(image)`
+  - 載入 `RealESRGAN_x4plus_anime_6B`（路徑相對 main.py）
+  - 優先使用 CUDA GPU
+  - 執行失敗時 fallback 到 `cv2.resize` 並印警告
+
+- [ ] 2.6 **驗證點**：每個模組的 `if __name__ == "__main__":` 區塊單獨測試通過
 
 ---
 
-## 階段 3：整合 main.py（一次串完所有功能）
+## 階段 3：整合 main.py
 
-- [ ] 3.1 argparse 設好所有參數：`-i / -o / --size / --enhance / --sr / --border / --circle / --crop`
+- [ ] 3.1 argparse：只有 `-i / --input`（圖片路徑）
 - [ ] 3.2 流程串接：
-  - 檢查 input 存在與格式 → 讀圖
-  - 臉部偵測（失敗 → fallback 中心裁切；若有 `--crop` 則優先用手動）
-  - 依 bbox 擴大裁切 → 正方形
-  - 存中間結果到 `intermediate/`
-  - 若 `--enhance` → 走 enhance.py
-  - 若 `--sr` → 走 super_resolution.py；否則 cv2.resize
-  - 依 `--border / --circle` 後製
-  - 輸出到 `-o` 指定路徑
+  1. 驗證輸入檔案存在且格式正確（JPG/JPEG/PNG）
+  2. pathlib + PIL 讀圖
+  3. 臉部偵測（失敗 → sys.exit(1)）
+  4. 依 bbox 裁切頭像
+  5. enhance（永遠執行）
+  6. 判斷裁切後尺寸：< 1024 → SR；≥ 1024 → 直接 resize
+  7. Resize 至 1024×1024
+  8. 存到 `outputs/`（自動建立資料夾）
 - [ ] 3.3 每一步加 print 訊息，讓終端機看得到進度
-- [ ] 3.4 錯誤訊息要清楚指出是哪一步死掉
+- [ ] 3.4 錯誤訊息清楚指出是哪一步失敗
 
 ---
 
-## 階段 4：端到端測試（驗證完整版本）
+## 階段 4：端到端測試
 
-- [ ] 4.1 跑最基本：`python main.py -i sample_images/xxx.jpg -o outputs/test1.png`
-- [ ] 4.2 全開：`... --enhance --sr --border --circle`
-- [ ] 4.3 故意餵壞圖、不存在的路徑，看錯誤訊息清不清楚
-- [ ] 4.4 故意餵沒有臉的圖，確認 fallback 到中心裁切
-- [ ] 4.5 故意改名權重檔，確認 SR fallback 到 cv2.resize
-- [ ] 4.6 比較不同 `--size` 輸出（512 / 1024 / 2048）
+- [ ] 4.1 基本跑通：`python main.py -i sample_images/xxx.jpg`
+- [ ] 4.2 確認輸出是 1024×1024 PNG 且存在 `outputs/`
+- [ ] 4.3 連跑兩次同一張圖，確認 `output(1).png` 自動命名正確
+- [ ] 4.4 故意餵沒有臉的圖，確認 `sys.exit(1)` 錯誤訊息清楚
+- [ ] 4.5 故意餵不存在的路徑，確認錯誤訊息清楚
+- [ ] 4.6 故意餵高解析度大圖（裁切後 ≥ 1024），確認跳過 SR 只做 resize
+- [ ] 4.7 故意移除權重檔，確認 SR fallback 到 cv2.resize 並印警告
+- [ ] 4.8 確認 GPU 正確使用（`nvidia-smi` 確認顯卡運行中）
 
 ---
 
-## 階段 5：收尾文件與報告
+## 階段 5：收尾文件
 
-- [ ] 5.1 改寫 `README.md`（安裝、權重下載、用法、所有指令範例、FAQ）
-- [ ] 5.2 準備 demo 用的 before/after 對照圖（放進報告）
-- [ ] 5.3 寫專題報告（動機、技術、流程、實作、問題、改進、結論）
-- [ ] 5.4 `git add . && git commit && git push`
+- [ ] 5.1 改寫 `README.md`（安裝步驟、權重下載、執行方式、basicsr 修補說明、FAQ）
+- [ ] 5.2 確認 `計畫書.md` 反映最終實作
+- [ ] 5.3 `git add . && git commit && git push`
 
 ---
 
 ## 變更紀錄（Changelog）
 
-> Claude 每次動工後在此追加一筆，格式：`YYYY-MM-DD｜對應步驟｜做了什麼`
-
 - 2026-05-15｜（計畫建立）｜由使用者口述，Claude 寫入此檔案作為進度追蹤基準。
-- 2026-05-16｜1.1｜建立 `requirements.txt`，鎖定 numpy<2.0、torchvision<0.18 以避開 basicsr 與 numpy 2.x 已知相容性問題，並在註解中寫明手動修補 `basicsr/data/degradations.py` 的方法。
-- 2026-05-16｜1.2｜建立 `.gitignore`，忽略 `weights/*.pth`、`outputs/*`、`intermediate/*`、`sample_images/*`（保留 .gitkeep）、`__pycache__/`、venv、IDE 設定與 OS 雜檔。
-- 2026-05-16｜1.3（規範更新）｜使用者指定使用 conda 作為虛擬環境管理工具，已同步更新 `requirements.txt` 安裝指引與本檔 1.3 描述。
+- 2026-05-16｜1.1｜建立 `requirements.txt`，鎖定 numpy<2.0、torchvision<0.18。
+- 2026-05-16｜1.2｜建立 `.gitignore`。
+- 2026-05-16｜1.3（規範更新）｜使用者指定使用 conda 作為虛擬環境管理工具。
+- 2026-05-24｜全面重新設計｜根據使用者確認，更新設計決策：移除所有 CLI flag（只保留 -i）、移除 intermediate/ 資料夾、改用 dghs-imgutils 取代 anime-face-detector、輸出固定 1024×1024 PNG、SR 依裁切後尺寸自動決定是否執行、臉部偵測失敗直接 sys.exit(1)、輸出命名採自動編號。

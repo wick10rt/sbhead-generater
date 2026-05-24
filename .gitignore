@@ -10,10 +10,7 @@ weights/*.bin
 weights/*.safetensors
 !weights/.gitkeep
 
-# ---- 處理過程與輸出（每次執行都會變動，不需追蹤） ----
-intermediate/*
-!intermediate/.gitkeep
-
+# ---- 輸出（每次執行都會變動，不需追蹤；main.py 執行時自動建立資料夾） ----
 outputs/*
 !outputs/.gitkeep
 
