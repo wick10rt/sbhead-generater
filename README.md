@@ -7,7 +7,7 @@
 
 ## 你需要手動完成的步驟
 
-> 程式碼由 Claude 負責，以下四件事需要你在本機操作完成。
+> 程式碼由 Claude 負責，以下五件事需要你在本機操作完成。
 
 ---
 
@@ -123,7 +123,10 @@ python main.py -i sample_images/kasumi.jpg
 sbhead-generater/
 ├── main.py                          # 主程式
 ├── requirements.txt                 # 套件清單
+├── PLAN.md                          # 開發進度追蹤
+├── 計畫書.md                        # 給教授看的計畫書
 ├── utils/
+│   ├── __init__.py
 │   ├── face_detect.py               # 動漫臉部偵測
 │   ├── crop_avatar.py               # 頭像裁切
 │   ├── enhance.py                   # 影像增強
