@@ -6,6 +6,7 @@
 from __future__ import annotations
 import sys
 import numpy as np
+from PIL import Image
 from imgutils.detect import detect_faces
 
 
@@ -21,8 +22,12 @@ def detect_largest_face(image: np.ndarray) -> tuple[int, int, int, int]:
     Notes:
         若未偵測到任何臉部，會印出錯誤訊息並 sys.exit(1)，不會回傳。
     """
+    # dghs-imgutils 0.19+ 的 detect_faces 不接受 ndarray，
+    # 只認 PIL.Image / 檔案路徑 / BinaryIO，所以先轉 PIL.Image。
+    pil_image = Image.fromarray(image) if isinstance(image, np.ndarray) else image
+
     # detect_faces 回傳 list，元素為 ((x0, y0, x1, y1), label, score)
-    detections = detect_faces(image)
+    detections = detect_faces(pil_image)
 
     if not detections:
         print(
