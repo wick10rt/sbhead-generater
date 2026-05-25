@@ -92,40 +92,40 @@ sbhead-generater/
 
 > 每個模組都能單獨 import 測試，不依賴 main.py。
 
-- [ ] 2.1 `utils/avatar_output.py` — `save_avatar(image, outputs_dir)`
+- [x] 2.1 `utils/avatar_output.py` — `save_avatar(image, outputs_dir)`
   - 固定輸出 1024×1024 PNG
   - 命名規則：`output.png` → `output(1).png` → `output(2).png`…
   - 自動建立 `outputs/` 資料夾
 
-- [ ] 2.2 `utils/enhance.py` — `enhance_image(image)`
+- [x] 2.2 `utils/enhance.py` — `enhance_image(image)`
   - 銳化（unsharp mask）
   - 降噪（bilateral filter）
   - 對比度調整（CLAHE）
   - 保守參數，避免動漫線條變奇怪
 
-- [ ] 2.3 `utils/crop_avatar.py` — `crop_by_bbox(image, bbox)`
+- [x] 2.3 `utils/crop_avatar.py` — `crop_by_bbox(image, bbox)`
   - 依臉部 bbox 擴大裁切範圍（含頭髮與部分肩膀）
   - 上方擴展比下方多，符合動漫頭部比例
   - 裁成正方形，修正超出圖片邊界
 
-- [ ] 2.4 `utils/face_detect.py` — `detect_largest_face(image) -> bbox`
+- [x] 2.4 `utils/face_detect.py` — `detect_largest_face(image) -> bbox`
   - 使用 dghs-imgutils 偵測動漫臉部
   - 回傳面積最大的臉部 bbox（x0, y0, x1, y1）
   - 無臉偵測到 → `sys.exit(1)` + 清楚錯誤訊息
 
-- [ ] 2.5 `utils/super_resolution.py` — `upscale_image(image)`
+- [x] 2.5 `utils/super_resolution.py` — `upscale_image(image)`
   - 載入 `RealESRGAN_x4plus_anime_6B`（路徑相對 main.py）
   - 優先使用 CUDA GPU
   - 執行失敗時 fallback 到 `cv2.resize` 並印警告
 
-- [ ] 2.6 **驗證點**：每個模組的 `if __name__ == "__main__":` 區塊單獨測試通過
+- [x] 2.6 **驗證點**：每個模組的 `if __name__ == "__main__":` 區塊單獨測試通過
 
 ---
 
 ## 階段 3：整合 main.py
 
-- [ ] 3.1 argparse：只有 `-i / --input`（圖片路徑）
-- [ ] 3.2 流程串接：
+- [x] 3.1 argparse：只有 `-i / --input`（圖片路徑）
+- [x] 3.2 流程串接：
   1. 驗證輸入檔案存在且格式正確（JPG/JPEG/PNG）
   2. pathlib + PIL 讀圖
   3. 臉部偵測（失敗 → sys.exit(1)）
@@ -134,28 +134,28 @@ sbhead-generater/
   6. 判斷裁切後尺寸：< 1024 → SR；≥ 1024 → 直接 resize
   7. Resize 至 1024×1024
   8. 存到 `outputs/`（自動建立資料夾）
-- [ ] 3.3 每一步加 print 訊息，讓終端機看得到進度
-- [ ] 3.4 錯誤訊息清楚指出是哪一步失敗
+- [x] 3.3 每一步加 print 訊息，讓終端機看得到進度
+- [x] 3.4 錯誤訊息清楚指出是哪一步失敗
 
 ---
 
 ## 階段 4：端到端測試
 
-- [ ] 4.1 基本跑通：`python main.py -i sample_images/xxx.jpg`
-- [ ] 4.2 確認輸出是 1024×1024 PNG 且存在 `outputs/`
-- [ ] 4.3 連跑兩次同一張圖，確認 `output(1).png` 自動命名正確
-- [ ] 4.4 故意餵沒有臉的圖，確認 `sys.exit(1)` 錯誤訊息清楚
-- [ ] 4.5 故意餵不存在的路徑，確認錯誤訊息清楚
-- [ ] 4.6 故意餵高解析度大圖（裁切後 ≥ 1024），確認跳過 SR 只做 resize
-- [ ] 4.7 故意移除權重檔，確認 SR fallback 到 cv2.resize 並印警告
-- [ ] 4.8 確認 GPU 正確使用（`nvidia-smi` 確認顯卡運行中）
+- [x] 4.1 基本跑通：`python main.py -i sample_images/xxx.jpg`
+- [x] 4.2 確認輸出是 1024×1024 PNG 且存在 `outputs/`
+- [x] 4.3 連跑兩次同一張圖，確認 `output(1).png` 自動命名正確
+- [x] 4.4 故意餵沒有臉的圖，確認 `sys.exit(1)` 錯誤訊息清楚
+- [x] 4.5 故意餵不存在的路徑，確認錯誤訊息清楚
+- [x] 4.6 故意餵高解析度大圖（裁切後 ≥ 1024），確認跳過 SR 只做 resize
+- [x] 4.7 故意移除權重檔，確認 SR fallback 到 cv2.resize 並印警告
+- [x] 4.8 確認 GPU 正確使用（`nvidia-smi` 確認顯卡運行中）
 
 ---
 
 ## 階段 5：收尾文件
 
-- [ ] 5.1 改寫 `README.md`（安裝步驟、權重下載、執行方式、basicsr 修補說明、FAQ）
-- [ ] 5.2 確認 `計畫書.md` 反映最終實作
+- [x] 5.1 改寫 `README.md`（安裝步驟、權重下載、執行方式、basicsr 修補說明、FAQ）
+- [x] 5.2 確認 `計畫書.md` 反映最終實作
 - [ ] 5.3 `git add . && git commit && git push`
 
 ---
@@ -168,3 +168,4 @@ sbhead-generater/
 - 2026-05-16｜1.3（規範更新）｜使用者指定使用 conda 作為虛擬環境管理工具。
 - 2026-05-24｜全面重新設計｜根據使用者確認，更新設計決策：移除所有 CLI flag（只保留 -i）、移除 intermediate/ 資料夾、改用 dghs-imgutils 取代 anime-face-detector、輸出固定 1024×1024 PNG、SR 依裁切後尺寸自動決定是否執行、臉部偵測失敗直接 sys.exit(1)、輸出命名採自動編號。
 - 2026-05-24｜階段 1 完成｜使用者本機完成 conda 環境、套件安裝、權重下載、basicsr 手改、測試圖放置、驗證指令通過。階段 1 全部勾選完成，可進入階段 2 程式碼開發。
+- 2026-05-25｜階段 2～5.2 完成｜五個 utils 模組全部實作完成，main.py 整合完成，端到端測試全數通過（使用者本機驗證）。README.md 與計畫書.md 已同步最終設計。剩餘 5.3 最終 commit & push。
