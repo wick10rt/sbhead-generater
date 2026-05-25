@@ -1,7 +1,7 @@
 # sbhead-generater
 **Bang Dream 角色大頭貼自動生成系統**
 
-輸入一張動漫角色圖片，自動偵測臉部、裁切頭像、畫質增強、AI 超解析度放大，輸出 1024×1024 PNG 大頭貼。
+輸入一張動漫角色圖片，自動偵測畫面中**所有**角色臉部、裁切頭像、畫質增強、AI 超解析度放大，每張臉同時輸出「未做 SR」與「做完 SR」兩個版本的 1024×1024 PNG 大頭貼，方便對比畫質差異。
 
 ---
 
@@ -112,8 +112,32 @@ conda activate sbhead
 python main.py -i sample_images/kasumi.jpg
 ```
 
-輸出結果會存到 `outputs/` 資料夾，命名為 `output.png`。
-若同名檔案已存在，會自動改為 `output(1).png`、`output(2).png`…
+### 輸出位置與命名規則
+
+輸出結果會分別存到 `outputs/raw/` 與 `outputs/sr/` 兩個子資料夾：
+
+- `outputs/raw/output.png`：未做超解析度的版本（僅裁切 + enhance + resize）
+- `outputs/sr/output.png`：做完 Real-ESRGAN 超解析度的版本
+
+兩邊檔名一律同步，方便對比 SR 效果。
+
+**多臉時**：偵測到 N 張臉就輸出 N 對檔案（按偵測器原順序、單張失敗會跳過繼續處理其他臉），編號連續：
+
+```
+outputs/
+├── raw/
+│   ├── output.png       ← 第一張臉
+│   ├── output(1).png    ← 第二張臉
+│   └── output(2).png    ← 第三張臉
+└── sr/
+    ├── output.png       ← 與 raw/output.png 同一張臉
+    ├── output(1).png
+    └── output(2).png
+```
+
+重跑時編號從 raw/ 與 sr/ 兩邊現有最大編號 + 1 開始，不會覆蓋既有檔案。
+
+> **注意**：若裁切後尺寸 ≥ 1024，sr 版會跳過 Real-ESRGAN、直接 resize，此時 raw 版與 sr 版內容相同。
 
 ---
 
@@ -136,4 +160,6 @@ sbhead-generater/
 │   └── RealESRGAN_x4plus_anime_6B.pth   ← 需自行下載
 ├── sample_images/                   ← 放測試圖（不進 git）
 └── outputs/                         ← 執行結果（不進 git）
+    ├── raw/                         # 未做 SR 的版本
+    └── sr/                          # 做完 SR 的版本（與 raw/ 同名同步）
 ```
