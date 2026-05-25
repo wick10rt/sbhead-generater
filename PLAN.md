@@ -84,7 +84,7 @@ sbhead-generater/
   改為：from torchvision.transforms.functional import rgb_to_grayscale
   ```
 - [x] 1.6 放 1～2 張測試圖到 `sample_images/`
-- [x] 1.7 **驗證點**：`python -c "import cv2, torch, realesrgan, imgutils"` 不報錯
+- [x] 1.7 **驗證點**：`python -c "import cv2, torch, realesrgan; from imgutils.detect import detect_faces; print('OK')"` 不報錯
 
 ---
 
