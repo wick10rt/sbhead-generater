@@ -98,7 +98,7 @@ sbhead-generater/
 所有步驟完成後，執行以下指令確認沒有報錯：
 
 ```bash
-python -c "import cv2, torch, realesrgan, imgutils; print('環境驗證通過')"
+python -c "import cv2, torch, realesrgan; from imgutils.detect import detect_faces; print('環境驗證通過')"
 ```
 
 看到 `環境驗證通過` 就代表環境設定完成，可以開始執行程式。
