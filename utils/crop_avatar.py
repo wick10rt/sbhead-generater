@@ -81,7 +81,7 @@ if __name__ == "__main__":
 
     # 加入專案根目錄至 sys.path 以便 import 同層的 face_detect
     sys.path.insert(0, str(Path(__file__).parent.parent))
-    from utils.face_detect import detect_largest_face
+    from utils.face_detect import detect_all_faces
 
     sample_dir = Path(__file__).parent.parent / "sample_images"
     images = sorted(
@@ -94,8 +94,10 @@ if __name__ == "__main__":
 
     test_path = images[0]
     img = np.array(Image.open(test_path).convert("RGB"))
-    bbox = detect_largest_face(img)
-    cropped = crop_by_bbox(img, bbox)
+    bboxes = detect_all_faces(img)
     print(f"原圖：{img.shape[1]}×{img.shape[0]}")
-    print(f"臉部 bbox：{bbox}")
-    print(f"裁切後：{cropped.shape[1]}×{cropped.shape[0]}")
+    print(f"偵測到 {len(bboxes)} 張臉，依序裁切：")
+    for i, bbox in enumerate(bboxes, start=1):
+        cropped = crop_by_bbox(img, bbox)
+        print(f"  第 {i} 張：bbox={bbox} → 裁切後 "
+              f"{cropped.shape[1]}×{cropped.shape[0]}")
