@@ -18,7 +18,7 @@
 | 臉部偵測 | dghs-imgutils[gpu]（`pip install dghs-imgutils[gpu]`） |
 | 多臉策略 | 偵測到的所有臉部全部處理（按偵測器原順序），單張失敗印警告後跳過、繼續其他臉 |
 | 偵測失敗 | 無臉時 `sys.exit(1)` + 清楚錯誤訊息，不輸出任何檔案 |
-| 裁切外擴倍率 | EXPAND_RATIO=1.7（bbox 寬高最大邊 ×1.7），EXTRA_TOP_RATIO=0.15 |
+| 裁切外擴倍率 | EXPAND_RATIO=1.6（bbox 寬高最大邊 ×1.6），EXTRA_TOP_RATIO=0.15 |
 | Enhance | 永遠自動執行（銳化 + 降噪 + 對比），raw 與 sr 兩版都套 |
 | 雙版本輸出 | 每張臉同時輸出 raw 版（不跑 SR）與 sr 版（跑 SR）以便比對 |
 | SR 條件 | 裁切後尺寸 < 1024 → sr 版跑 Real-ESRGAN；≥ 1024 → sr 版與 raw 版內容相同（都直接 resize） |
@@ -48,7 +48,6 @@ sbhead-generater/
 ├── requirements.txt
 ├── README.md
 ├── PLAN.md
-├── 計畫書.md
 ├── utils/
 │   ├── __init__.py
 │   ├── face_detect.py
@@ -159,7 +158,7 @@ sbhead-generater/
 
 ## 階段 5：收尾文件
 
-- [x] 5.1 改寫 `README.md`（安裝步驟、權重下載、執行方式、basicsr 修補說明、FAQ）
+- [x] 5.1 改寫 `README.md`（安裝步驟、權重下載、執行方式、basicsr 修補說明）
 - [x] 5.2 確認 `計畫書.md` 反映最終實作
 - [x] 5.3 `git add . && git commit && git push`
 
@@ -170,7 +169,7 @@ sbhead-generater/
 > 第一版完成、本機測試通過後追加的需求。
 
 **變更摘要：**
-- crop 外擴倍率 1.9 → 1.7（EXTRA_TOP_RATIO 維持 0.15）
+- crop 外擴倍率 1.9 → 1.6（EXTRA_TOP_RATIO 維持 0.15）
 - 多臉處理：偵測到的所有臉部全部處理（按偵測器原順序），單張失敗跳過繼續
 - 雙版本輸出：raw（未跑 SR）與 sr（跑 SR）兩個版本，分別存到 `outputs/raw/` 與 `outputs/sr/`
 - 命名規則：raw 與 sr 編號同步；同一次執行內多張臉用連續編號
@@ -179,21 +178,20 @@ sbhead-generater/
 
 - [x] 6.0.1 更新 `CLAUDE.md`：設計決策表、資料夾結構、處理流程、模組規格
 - [x] 6.0.2 更新 `PLAN.md`：本變更紀錄與階段 6 任務清單
-- [ ] 6.0.3 更新 `README.md`：執行方式、輸出位置說明、專案結構樹
-- [ ] 6.0.4 更新 `計畫書.md`：功能與處理流程段落
+- [x] 6.0.3 更新 `README.md`：整合計畫書內容 + 執行方式、輸出位置說明、專案結構樹
+- [x] 6.0.4 刪除 `計畫書.md`（內容已整合進 README.md）
 
 ### 6.1 程式碼修改
 
-- [ ] 6.1.1 `utils/crop_avatar.py`：`EXPAND_RATIO` 1.9 → 1.7
-- [ ] 6.1.2 `utils/face_detect.py`：
-  - 新增 `detect_all_faces(image) -> list[tuple]`，回傳所有 bbox（依偵測器原順序）
-  - `detect_largest_face` 可保留作為 thin wrapper 或移除（main.py 不再使用）
-- [ ] 6.1.3 `utils/avatar_output.py`：
+- [x] 6.1.1 `utils/crop_avatar.py`：`EXPAND_RATIO` 1.9 → 1.6（分兩次 commit 調整）
+- [x] 6.1.2 `utils/face_detect.py`：
+  - `detect_largest_face` → `detect_all_faces`，回傳所有 bbox（依偵測器原順序）
+- [x] 6.1.3 `utils/avatar_output.py`：
   - 新增 `next_paired_index(outputs_dir)`：掃 raw/ 與 sr/ 取兩邊最大編號 + 1
   - 新增 `save_paired_avatar(raw_image, sr_image, outputs_dir, index)`：同時寫入 raw/ 與 sr/ 同名檔
-  - 舊 `save_avatar` 與 `_next_output_path` 視情況保留或移除
-- [ ] 6.1.4 `utils/__init__.py`：更新 re-export
-- [ ] 6.1.5 `main.py`：
+  - 移除舊的 `save_avatar` 與 `_next_output_path`
+- [x] 6.1.4 `utils/__init__.py`：更新 re-export
+- [x] 6.1.5 `main.py`：
   - 改用 `detect_all_faces`
   - 先呼叫 `next_paired_index` 取得起始 index
   - 對每張臉做 try/except，單張失敗印警告後 continue
@@ -205,14 +203,14 @@ sbhead-generater/
 - [ ] 6.2.1 單臉圖：確認 `outputs/raw/output.png` 與 `outputs/sr/output.png` 同步產生
 - [ ] 6.2.2 多臉圖：確認 N 張臉產生 N 對檔案、編號連續、raw/sr 兩邊同步
 - [ ] 6.2.3 連跑兩次：確認編號接續、不覆蓋既有檔案
-- [ ] 6.2.4 1.7x 視覺確認：對比 1.9 版本與 1.7 版本的裁切結果
+- [ ] 6.2.4 1.6x 視覺確認：對比舊版本與 1.6x 的裁切結果
 - [ ] 6.2.5 大圖（裁切 ≥ 1024）：確認 raw 與 sr 兩版內容相同（都跳過 SR）
 - [ ] 6.2.6 無臉圖：`sys.exit(1)` 行為不變
 - [ ] 6.2.7 模型 cache：多臉時確認 Real-ESRGAN 只載入一次
 
 ### 6.3 收尾
 
-- [ ] 6.3.1 `git add . && git commit && git push`
+- [x] 6.3.1 `git add . && git commit && git push`
 
 ---
 
@@ -225,4 +223,5 @@ sbhead-generater/
 - 2026-05-24｜全面重新設計｜根據使用者確認，更新設計決策：移除所有 CLI flag（只保留 -i）、移除 intermediate/ 資料夾、改用 dghs-imgutils 取代 anime-face-detector、輸出固定 1024×1024 PNG、SR 依裁切後尺寸自動決定是否執行、臉部偵測失敗直接 sys.exit(1)、輸出命名採自動編號。
 - 2026-05-24｜階段 1 完成｜使用者本機完成 conda 環境、套件安裝、權重下載、basicsr 手改、測試圖放置、驗證指令通過。階段 1 全部勾選完成，可進入階段 2 程式碼開發。
 - 2026-05-25｜階段 2～5.2 完成｜五個 utils 模組全部實作完成，main.py 整合完成，端到端測試全數通過（使用者本機驗證）。README.md 與計畫書.md 已同步最終設計。剩餘 5.3 最終 commit & push。
-- 2026-05-25｜階段 5.3 完成、進入 v2 改版｜v1 push 完成。使用者提出 3 項變更：(1) crop EXPAND_RATIO 1.9 → 1.7；(2) 多臉全處理（按偵測器原順序、單張失敗跳過）；(3) raw/sr 雙版本輸出至 `outputs/raw/` 與 `outputs/sr/`（兩邊編號同步、enhance 兩版都套、≥1024 時兩版相同）。新增階段 6，先動 MD 規格再動程式碼。
+- 2026-05-25｜階段 5.3 完成、進入 v2 改版｜v1 push 完成。使用者提出 3 項變更：(1) crop EXPAND_RATIO 1.9 → 1.6（分兩次調整）；(2) 多臉全處理（按偵測器原順序、單張失敗跳過）；(3) raw/sr 雙版本輸出至 `outputs/raw/` 與 `outputs/sr/`（兩邊編號同步、enhance 兩版都套、≥1024 時兩版相同）。新增階段 6。
+- 2026-05-25｜階段 6 完成｜v2 程式碼（多臉 + 雙版本）push 完成。README.md 整合計畫書內容後，計畫書.md 刪除。EXPAND_RATIO 最終定為 1.6。所有 MD 文件內容一致。
