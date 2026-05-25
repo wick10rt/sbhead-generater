@@ -8,7 +8,7 @@ from __future__ import annotations
 import numpy as np
 
 # === 裁切擴展參數 ===
-EXPAND_RATIO = 1.9       # 臉部 bbox 向外擴展倍數（含頭髮與肩膀）
+EXPAND_RATIO = 1.7       # 臉部 bbox 向外擴展倍數（含頭髮與肩膀）
 EXTRA_TOP_RATIO = 0.15   # 上方額外擴展比例（將中心向上偏移以保留頭髮）
 
 
