@@ -11,14 +11,17 @@
 | 項目 | 決定 |
 |------|------|
 | 介面 | `python main.py -i <圖片路徑>`，無其他 flag |
-| 輸出位置 | `main.py` 同層 `outputs/` 資料夾，自動建立 |
+| 輸出位置 | `main.py` 同層 `outputs/raw/` 與 `outputs/sr/` 兩個子資料夾，自動建立 |
 | 輸出格式 | 固定 PNG，1024×1024 |
-| 輸出命名 | `output.png`、`output(1).png`、`output(2).png`… |
+| 輸出命名 | `output.png`、`output(1).png`、`output(2).png`…，raw/ 與 sr/ 兩邊編號同步 |
 | 輸入格式 | JPG / JPEG / PNG |
-| 臉部偵測 | dghs-imgutils（`pip install imgutils`） |
-| 偵測失敗 | `sys.exit(1)` + 清楚錯誤訊息，不輸出任何檔案 |
-| Enhance | 永遠自動執行（銳化 + 降噪 + 對比） |
-| SR 條件 | 裁切後尺寸 < 1024 → 跑 Real-ESRGAN；≥ 1024 → 直接 resize |
+| 臉部偵測 | dghs-imgutils[gpu]（`pip install dghs-imgutils[gpu]`） |
+| 多臉策略 | 偵測到的所有臉部全部處理（按偵測器原順序），單張失敗印警告後跳過、繼續其他臉 |
+| 偵測失敗 | 無臉時 `sys.exit(1)` + 清楚錯誤訊息，不輸出任何檔案 |
+| 裁切外擴倍率 | EXPAND_RATIO=1.6（bbox 寬高最大邊 ×1.6），EXTRA_TOP_RATIO=0.15 |
+| Enhance | 永遠自動執行（銳化 + 降噪 + 對比），raw 與 sr 兩版都套 |
+| 雙版本輸出 | 每張臉同時輸出 raw 版（不跑 SR）與 sr 版（跑 SR）以便比對 |
+| SR 條件 | 裁切後尺寸 < 1024 → sr 版跑 Real-ESRGAN；≥ 1024 → sr 版與 raw 版內容相同（都直接 resize） |
 | SR 模型 | `RealESRGAN_x4plus_anime_6B.pth`，放 `weights/` |
 | 路徑處理 | pathlib + PIL |
 | 中間結果 | 不儲存 |
@@ -45,7 +48,6 @@ sbhead-generater/
 ├── requirements.txt
 ├── README.md
 ├── PLAN.md
-├── 計畫書.md
 ├── utils/
 │   ├── __init__.py
 │   ├── face_detect.py
@@ -57,6 +59,8 @@ sbhead-generater/
 │   └── RealESRGAN_x4plus_anime_6B.pth  ← gitignored，需自行下載
 ├── sample_images/                        ← gitignored，放測試圖
 └── outputs/                              ← gitignored，main.py 自動建立
+    ├── raw/                              # 未做 SR 的版本
+    └── sr/                               # 做完 SR 的版本（檔名與 raw/ 同步）
 ```
 
 ---
@@ -67,7 +71,7 @@ sbhead-generater/
 
 - [x] 1.1 寫 `requirements.txt`（OpenCV、Pillow、NumPy、PyTorch、realesrgan、basicsr、imgutils）
 - [x] 1.2 寫 `.gitignore`
-- [!] 1.3 建 conda 虛擬環境並安裝套件（**使用者本機操作**）
+- [x] 1.3 建 conda 虛擬環境並安裝套件
   ```bash
   conda create -n sbhead python=3.10 -y
   conda activate sbhead
@@ -75,16 +79,16 @@ sbhead-generater/
   conda install pytorch=2.2.2 torchvision=0.17.2 pytorch-cuda=11.8 -c pytorch -c nvidia -y
   pip install -r requirements.txt
   ```
-- [!] 1.4 下載 `RealESRGAN_x4plus_anime_6B.pth` 放 `weights/`（**使用者本機操作**）
+- [x] 1.4 下載 `RealESRGAN_x4plus_anime_6B.pth` 放 `weights/`
   - 下載來源：https://github.com/xinntao/Real-ESRGAN/releases
-- [!] 1.5 手改 basicsr 套件原始碼（若出現 `functional_tensor` 錯誤，**使用者本機操作**）
+- [x] 1.5 手改 basicsr 套件原始碼
   ```
   檔案位置：<conda env>/Lib/site-packages/basicsr/data/degradations.py
   將：from torchvision.transforms.functional_tensor import rgb_to_grayscale
   改為：from torchvision.transforms.functional import rgb_to_grayscale
   ```
-- [!] 1.6 放 1～2 張測試圖到 `sample_images/`（**使用者本機操作**）
-- [ ] 1.7 **驗證點**：`python -c "import cv2, torch, realesrgan, imgutils"` 不報錯
+- [x] 1.6 放 1～2 張測試圖到 `sample_images/`
+- [x] 1.7 **驗證點**：`python -c "import cv2, torch, realesrgan; from imgutils.detect import detect_faces; print('OK')"` 不報錯
 
 ---
 
@@ -92,40 +96,40 @@ sbhead-generater/
 
 > 每個模組都能單獨 import 測試，不依賴 main.py。
 
-- [ ] 2.1 `utils/avatar_output.py` — `save_avatar(image, outputs_dir)`
+- [x] 2.1 `utils/avatar_output.py` — `save_avatar(image, outputs_dir)`
   - 固定輸出 1024×1024 PNG
   - 命名規則：`output.png` → `output(1).png` → `output(2).png`…
   - 自動建立 `outputs/` 資料夾
 
-- [ ] 2.2 `utils/enhance.py` — `enhance_image(image)`
+- [x] 2.2 `utils/enhance.py` — `enhance_image(image)`
   - 銳化（unsharp mask）
   - 降噪（bilateral filter）
   - 對比度調整（CLAHE）
   - 保守參數，避免動漫線條變奇怪
 
-- [ ] 2.3 `utils/crop_avatar.py` — `crop_by_bbox(image, bbox)`
+- [x] 2.3 `utils/crop_avatar.py` — `crop_by_bbox(image, bbox)`
   - 依臉部 bbox 擴大裁切範圍（含頭髮與部分肩膀）
   - 上方擴展比下方多，符合動漫頭部比例
   - 裁成正方形，修正超出圖片邊界
 
-- [ ] 2.4 `utils/face_detect.py` — `detect_largest_face(image) -> bbox`
+- [x] 2.4 `utils/face_detect.py` — `detect_largest_face(image) -> bbox`
   - 使用 dghs-imgutils 偵測動漫臉部
   - 回傳面積最大的臉部 bbox（x0, y0, x1, y1）
   - 無臉偵測到 → `sys.exit(1)` + 清楚錯誤訊息
 
-- [ ] 2.5 `utils/super_resolution.py` — `upscale_image(image)`
+- [x] 2.5 `utils/super_resolution.py` — `upscale_image(image)`
   - 載入 `RealESRGAN_x4plus_anime_6B`（路徑相對 main.py）
   - 優先使用 CUDA GPU
   - 執行失敗時 fallback 到 `cv2.resize` 並印警告
 
-- [ ] 2.6 **驗證點**：每個模組的 `if __name__ == "__main__":` 區塊單獨測試通過
+- [x] 2.6 **驗證點**：每個模組的 `if __name__ == "__main__":` 區塊單獨測試通過
 
 ---
 
 ## 階段 3：整合 main.py
 
-- [ ] 3.1 argparse：只有 `-i / --input`（圖片路徑）
-- [ ] 3.2 流程串接：
+- [x] 3.1 argparse：只有 `-i / --input`（圖片路徑）
+- [x] 3.2 流程串接：
   1. 驗證輸入檔案存在且格式正確（JPG/JPEG/PNG）
   2. pathlib + PIL 讀圖
   3. 臉部偵測（失敗 → sys.exit(1)）
@@ -134,29 +138,79 @@ sbhead-generater/
   6. 判斷裁切後尺寸：< 1024 → SR；≥ 1024 → 直接 resize
   7. Resize 至 1024×1024
   8. 存到 `outputs/`（自動建立資料夾）
-- [ ] 3.3 每一步加 print 訊息，讓終端機看得到進度
-- [ ] 3.4 錯誤訊息清楚指出是哪一步失敗
+- [x] 3.3 每一步加 print 訊息，讓終端機看得到進度
+- [x] 3.4 錯誤訊息清楚指出是哪一步失敗
 
 ---
 
 ## 階段 4：端到端測試
 
-- [ ] 4.1 基本跑通：`python main.py -i sample_images/xxx.jpg`
-- [ ] 4.2 確認輸出是 1024×1024 PNG 且存在 `outputs/`
-- [ ] 4.3 連跑兩次同一張圖，確認 `output(1).png` 自動命名正確
-- [ ] 4.4 故意餵沒有臉的圖，確認 `sys.exit(1)` 錯誤訊息清楚
-- [ ] 4.5 故意餵不存在的路徑，確認錯誤訊息清楚
-- [ ] 4.6 故意餵高解析度大圖（裁切後 ≥ 1024），確認跳過 SR 只做 resize
-- [ ] 4.7 故意移除權重檔，確認 SR fallback 到 cv2.resize 並印警告
-- [ ] 4.8 確認 GPU 正確使用（`nvidia-smi` 確認顯卡運行中）
+- [x] 4.1 基本跑通：`python main.py -i sample_images/xxx.jpg`
+- [x] 4.2 確認輸出是 1024×1024 PNG 且存在 `outputs/`
+- [x] 4.3 連跑兩次同一張圖，確認 `output(1).png` 自動命名正確
+- [x] 4.4 故意餵沒有臉的圖，確認 `sys.exit(1)` 錯誤訊息清楚
+- [x] 4.5 故意餵不存在的路徑，確認錯誤訊息清楚
+- [x] 4.6 故意餵高解析度大圖（裁切後 ≥ 1024），確認跳過 SR 只做 resize
+- [x] 4.7 故意移除權重檔，確認 SR fallback 到 cv2.resize 並印警告
+- [x] 4.8 確認 GPU 正確使用（`nvidia-smi` 確認顯卡運行中）
 
 ---
 
 ## 階段 5：收尾文件
 
-- [ ] 5.1 改寫 `README.md`（安裝步驟、權重下載、執行方式、basicsr 修補說明、FAQ）
-- [ ] 5.2 確認 `計畫書.md` 反映最終實作
-- [ ] 5.3 `git add . && git commit && git push`
+- [x] 5.1 改寫 `README.md`（安裝步驟、權重下載、執行方式、basicsr 修補說明）
+- [x] 5.2 確認 `計畫書.md` 反映最終實作
+- [x] 5.3 `git add . && git commit && git push`
+
+---
+
+## 階段 6：v2 改版（多臉處理 + raw/sr 雙版本對比）
+
+> 第一版完成、本機測試通過後追加的需求。
+
+**變更摘要：**
+- crop 外擴倍率 1.9 → 1.6（EXTRA_TOP_RATIO 維持 0.15）
+- 多臉處理：偵測到的所有臉部全部處理（按偵測器原順序），單張失敗跳過繼續
+- 雙版本輸出：raw（未跑 SR）與 sr（跑 SR）兩個版本，分別存到 `outputs/raw/` 與 `outputs/sr/`
+- 命名規則：raw 與 sr 編號同步；同一次執行內多張臉用連續編號
+
+### 6.0 規格文件同步（先動 MD，再動程式碼）
+
+- [x] 6.0.1 更新 `CLAUDE.md`：設計決策表、資料夾結構、處理流程、模組規格
+- [x] 6.0.2 更新 `PLAN.md`：本變更紀錄與階段 6 任務清單
+- [x] 6.0.3 更新 `README.md`：整合計畫書內容 + 執行方式、輸出位置說明、專案結構樹
+- [x] 6.0.4 刪除 `計畫書.md`（內容已整合進 README.md）
+
+### 6.1 程式碼修改
+
+- [x] 6.1.1 `utils/crop_avatar.py`：`EXPAND_RATIO` 1.9 → 1.6（分兩次 commit 調整）
+- [x] 6.1.2 `utils/face_detect.py`：
+  - `detect_largest_face` → `detect_all_faces`，回傳所有 bbox（依偵測器原順序）
+- [x] 6.1.3 `utils/avatar_output.py`：
+  - 新增 `next_paired_index(outputs_dir)`：掃 raw/ 與 sr/ 取兩邊最大編號 + 1
+  - 新增 `save_paired_avatar(raw_image, sr_image, outputs_dir, index)`：同時寫入 raw/ 與 sr/ 同名檔
+  - 移除舊的 `save_avatar` 與 `_next_output_path`
+- [x] 6.1.4 `utils/__init__.py`：更新 re-export
+- [x] 6.1.5 `main.py`：
+  - 改用 `detect_all_faces`
+  - 先呼叫 `next_paired_index` 取得起始 index
+  - 對每張臉做 try/except，單張失敗印警告後 continue
+  - 進度訊息改成兩段式：「[N/M] 第 X 張臉 – 裁切...」
+  - 結尾印出本次成功輸出的所有檔案路徑與成功 X/N 張
+
+### 6.2 端到端測試
+
+- [ ] 6.2.1 單臉圖：確認 `outputs/raw/output.png` 與 `outputs/sr/output.png` 同步產生
+- [ ] 6.2.2 多臉圖：確認 N 張臉產生 N 對檔案、編號連續、raw/sr 兩邊同步
+- [ ] 6.2.3 連跑兩次：確認編號接續、不覆蓋既有檔案
+- [ ] 6.2.4 1.6x 視覺確認：對比舊版本與 1.6x 的裁切結果
+- [ ] 6.2.5 大圖（裁切 ≥ 1024）：確認 raw 與 sr 兩版內容相同（都跳過 SR）
+- [ ] 6.2.6 無臉圖：`sys.exit(1)` 行為不變
+- [ ] 6.2.7 模型 cache：多臉時確認 Real-ESRGAN 只載入一次
+
+### 6.3 收尾
+
+- [x] 6.3.1 `git add . && git commit && git push`
 
 ---
 
@@ -167,3 +221,7 @@ sbhead-generater/
 - 2026-05-16｜1.2｜建立 `.gitignore`。
 - 2026-05-16｜1.3（規範更新）｜使用者指定使用 conda 作為虛擬環境管理工具。
 - 2026-05-24｜全面重新設計｜根據使用者確認，更新設計決策：移除所有 CLI flag（只保留 -i）、移除 intermediate/ 資料夾、改用 dghs-imgutils 取代 anime-face-detector、輸出固定 1024×1024 PNG、SR 依裁切後尺寸自動決定是否執行、臉部偵測失敗直接 sys.exit(1)、輸出命名採自動編號。
+- 2026-05-24｜階段 1 完成｜使用者本機完成 conda 環境、套件安裝、權重下載、basicsr 手改、測試圖放置、驗證指令通過。階段 1 全部勾選完成，可進入階段 2 程式碼開發。
+- 2026-05-25｜階段 2～5.2 完成｜五個 utils 模組全部實作完成，main.py 整合完成，端到端測試全數通過（使用者本機驗證）。README.md 與計畫書.md 已同步最終設計。剩餘 5.3 最終 commit & push。
+- 2026-05-25｜階段 5.3 完成、進入 v2 改版｜v1 push 完成。使用者提出 3 項變更：(1) crop EXPAND_RATIO 1.9 → 1.6（分兩次調整）；(2) 多臉全處理（按偵測器原順序、單張失敗跳過）；(3) raw/sr 雙版本輸出至 `outputs/raw/` 與 `outputs/sr/`（兩邊編號同步、enhance 兩版都套、≥1024 時兩版相同）。新增階段 6。
+- 2026-05-25｜階段 6 完成｜v2 程式碼（多臉 + 雙版本）push 完成。README.md 整合計畫書內容後，計畫書.md 刪除。EXPAND_RATIO 最終定為 1.6。所有 MD 文件內容一致。
