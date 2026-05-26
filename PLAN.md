@@ -12,7 +12,7 @@
 |------|------|
 | 介面 | `python main.py -i <圖片路徑>`，無其他 flag |
 | 輸出位置 | `main.py` 同層 `outputs/raw/` 與 `outputs/sr/` 兩個子資料夾，自動建立 |
-| 輸出格式 | 固定 PNG，1024×1024 |
+| 輸出格式 | 固定 PNG，4096×4096 |
 | 輸出命名 | `output.png`、`output(1).png`、`output(2).png`…，raw/ 與 sr/ 兩邊編號同步 |
 | 輸入格式 | JPG / JPEG / PNG |
 | 臉部偵測 | dghs-imgutils[gpu]（`pip install dghs-imgutils[gpu]`） |
@@ -20,9 +20,9 @@
 | 偵測失敗 | 無臉時 `sys.exit(1)` + 清楚錯誤訊息，不輸出任何檔案 |
 | 裁切外擴倍率 | EXPAND_RATIO=1.6（bbox 寬高最大邊 ×1.6），EXTRA_TOP_RATIO=0.15 |
 | Enhance | 永遠自動執行（銳化 + 降噪 + 對比），raw 與 sr 兩版都套 |
-| 雙版本輸出 | 每張臉同時輸出 raw 版（不跑 SR）與 sr 版（跑 SR）以便比對 |
-| SR 條件 | 裁切後尺寸 < 1024 → sr 版跑 Real-ESRGAN；≥ 1024 → sr 版與 raw 版內容相同（都直接 resize） |
-| SR 模型 | `RealESRGAN_x4plus_anime_6B.pth`，放 `weights/` |
+| 雙版本輸出 | 每張臉同時輸出 raw 版（不跑 SR）與 sr 版（跑 SR）以便比對；兩版都 4096×4096 |
+| SR 條件 | 裁切後尺寸 < 4096 → sr 版**連續跑 Real-ESRGAN 直到 ≥ 4096**；≥ 4096 → sr 版與 raw 版內容相同（都直接 resize） |
+| SR 模型 | `RealESRGAN_x4plus_anime_6B.pth`，放 `weights/`，tile=400 |
 | 路徑處理 | pathlib + PIL |
 | 中間結果 | 不儲存 |
 | 平台 | Windows 11 + NVIDIA 4060+ |
@@ -214,6 +214,54 @@ sbhead-generater/
 
 ---
 
+## 階段 7：v3 改版（輸出 4096×4096）
+
+> v2 完成後追加的需求：把輸出解析度從 1024×1024 拉到 4096×4096，
+> 用以凸顯 Real-ESRGAN 對「低解析度上採」的優勢。
+
+**變更摘要：**
+- `OUTPUT_SIZE` 全面 1024 → 4096
+- `upscale_image` 改為迴圈：x4plus 一次 ×4，反覆執行直到輸出邊長 ≥ 4096
+- raw 版維持「不跑 SR、直接傳統 resize 到 4096」（明顯模糊正是要顯示 SR 的優勢）
+- 觸發條件：裁切 < 4096 跑 SR；裁切 ≥ 4096 跳過（sr = raw）
+- 不改 tile size（維持 400），OOM 由現有 fallback 機制兜底
+- 不去背（評估後使用者決定不做）
+
+**已知副作用：**
+- 單張 PNG ≈ 5–20 MB，多臉合照單次執行可能輸出 50–200 MB
+- 小裁切（< 1024）需跑 2 次 SR pass，耗時與 tile 拼接縫風險增加
+
+### 7.0 規格文件同步（先動 MD，再動程式碼）
+
+- [x] 7.0.1 更新 `CLAUDE.md`：設計決策表、處理流程、模組規格
+- [x] 7.0.2 更新 `PLAN.md`：本變更紀錄與階段 7 任務清單
+- [ ] 7.0.3 更新 `README.md`：所有 1024 改為 4096、處理流程章節同步
+
+### 7.1 程式碼修改
+
+- [ ] 7.1.1 `main.py`：`OUTPUT_SIZE` 1024 → 4096
+- [ ] 7.1.2 `utils/avatar_output.py`：`OUTPUT_SIZE` 1024 → 4096
+- [ ] 7.1.3 `utils/super_resolution.py`：
+  - 新增 `TARGET_SIZE = 4096` 常數
+  - `upscale_image` 改為 while 迴圈，反覆 SR 直到 min(h, w) ≥ TARGET_SIZE
+  - 印出每一輪 SR 的輸入 / 輸出尺寸，方便 demo 觀察
+  - fallback（cv2.resize）改為一次性放大到「裁切 → 目標 ÷ 裁切」倍率
+
+### 7.2 端到端測試
+
+- [ ] 7.2.1 小裁切（< 1024）：確認連續跑 2 次 SR、最終輸出 4096
+- [ ] 7.2.2 中裁切（1024 ≤ 裁切 < 4096）：確認跑 1 次 SR + resize 4096
+- [ ] 7.2.3 大裁切（≥ 4096）：確認跳過 SR、raw 與 sr 內容相同
+- [ ] 7.2.4 多臉圖：確認模型仍只載入一次、多次 SR 不會重新載入
+- [ ] 7.2.5 4060 8GB VRAM：確認 tile=400 下 4096 輸出不會 OOM；若 OOM 確認 fallback 正常觸發
+- [ ] 7.2.6 檔案大小檢查：確認 PNG 在合理範圍（< 30 MB）
+
+### 7.3 收尾
+
+- [ ] 7.3.1 `git add . && git commit && git push`
+
+---
+
 ## 變更紀錄（Changelog）
 
 - 2026-05-15｜（計畫建立）｜由使用者口述，Claude 寫入此檔案作為進度追蹤基準。
@@ -225,3 +273,4 @@ sbhead-generater/
 - 2026-05-25｜階段 2～5.2 完成｜五個 utils 模組全部實作完成，main.py 整合完成，端到端測試全數通過（使用者本機驗證）。README.md 與計畫書.md 已同步最終設計。剩餘 5.3 最終 commit & push。
 - 2026-05-25｜階段 5.3 完成、進入 v2 改版｜v1 push 完成。使用者提出 3 項變更：(1) crop EXPAND_RATIO 1.9 → 1.6（分兩次調整）；(2) 多臉全處理（按偵測器原順序、單張失敗跳過）；(3) raw/sr 雙版本輸出至 `outputs/raw/` 與 `outputs/sr/`（兩邊編號同步、enhance 兩版都套、≥1024 時兩版相同）。新增階段 6。
 - 2026-05-25｜階段 6 完成｜v2 程式碼（多臉 + 雙版本）push 完成。README.md 整合計畫書內容後，計畫書.md 刪除。EXPAND_RATIO 最終定為 1.6。所有 MD 文件內容一致。
+- 2026-05-26｜進入 v3 改版｜使用者要求輸出解析度 1024 → 4096。原本同時想加去背功能，評估後（動漫去背需 anime 專用 ISNet 模型、檔案大小翻倍、效果視輸入而定）使用者決定不做。新增階段 7：OUTPUT_SIZE 全面 1024 → 4096、`upscale_image` 改為 while 迴圈反覆 SR 直到 ≥ 4096、raw 也拉到 4096 以凸顯 SR 優勢、tile size 維持 400 靠 fallback 兜底。
