@@ -19,11 +19,6 @@ OUTPUT_SIZE = 4096
 RAW_SUBDIR = "raw"
 SR_SUBDIR = "sr"
 
-# SR 版輸出前與 raw 加權混合的比例（raw 佔比）。
-# 0.0 = 純 SR；1.0 = 純 raw。
-# 用以軟化 Real-ESRGAN x4plus_anime_6B 推線條/推飽和的硬感。
-SR_BLEND_ALPHA = 0.35
-
 # 比對 output.png 或 output(N).png
 _FILENAME_PATTERN = re.compile(r"^output(?:\((\d+)\))?\.png$")
 
@@ -95,15 +90,11 @@ def save_paired_avatar(
     raw 寫到 `outputs_dir/raw/`、sr 寫到 `outputs_dir/sr/`，
     兩邊使用同一個 index 對應的檔名（保證對比時編號一致）。
 
-    sr 版寫檔前會與 raw 4096 做加權混合（SR_BLEND_ALPHA）軟化 SR 推線條 /
-    推飽和的硬感；若 sr_image 與 raw_image 是同一物件（裁切 ≥ 4096 跳過 SR、
-    兩者本來就相同）則跳過混合，避免重複運算。
-
     使用 PIL 寫檔，避免 cv2.imwrite 在 Windows 中文路徑下失敗。
 
     Args:
         raw_image: 未做 SR 的 RGB 圖片。
-        sr_image: 做完 SR 的 RGB 圖片（若裁切 ≥ 4096 可能與 raw 相同物件）。
+        sr_image: 做完 SR 的 RGB 圖片（若裁切 ≥ 4096 可能與 raw 相同）。
         outputs_dir: 輸出根資料夾（會自動建立 raw/ 與 sr/）。
         index: 本張臉的編號（由 next_paired_index 取得後逐張 +1）。
 
@@ -119,26 +110,8 @@ def save_paired_avatar(
     raw_path = raw_dir / filename
     sr_path = sr_dir / filename
 
-    raw_resized = _resize_to_output(raw_image)
-
-    if sr_image is raw_image:
-        # 裁切 ≥ 4096 時 sr 跟 raw 是同一份物件，混合等於原樣，省略
-        sr_resized = raw_resized
-    else:
-        sr_resized = _resize_to_output(sr_image)
-        if SR_BLEND_ALPHA > 0:
-            # 線性混合：result = raw*alpha + sr*(1-alpha)
-            sr_resized = cv2.addWeighted(
-                raw_resized, SR_BLEND_ALPHA,
-                sr_resized, 1.0 - SR_BLEND_ALPHA, 0.0,
-            )
-            print(
-                f"        SR 混合：raw {SR_BLEND_ALPHA:.2f} + sr "
-                f"{1.0 - SR_BLEND_ALPHA:.2f}（軟化線條與飽和度）"
-            )
-
-    Image.fromarray(raw_resized).save(raw_path, format="PNG")
-    Image.fromarray(sr_resized).save(sr_path, format="PNG")
+    Image.fromarray(_resize_to_output(raw_image)).save(raw_path, format="PNG")
+    Image.fromarray(_resize_to_output(sr_image)).save(sr_path, format="PNG")
     return raw_path, sr_path
 
 
