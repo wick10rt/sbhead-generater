@@ -12,7 +12,7 @@
 |------|------|
 | 介面 | `python main.py -i <圖片路徑>`，無其他 flag |
 | 輸出位置 | `main.py` 同層 `outputs/raw/` 與 `outputs/sr/` 兩個子資料夾，自動建立 |
-| 輸出格式 | 固定 PNG，1024×1024 |
+| 輸出格式 | 固定 PNG，4096×4096 |
 | 輸出命名 | `output.png`、`output(1).png`、`output(2).png`…，raw/ 與 sr/ 兩邊編號同步 |
 | 輸入格式 | JPG / JPEG / PNG |
 | 臉部偵測 | dghs-imgutils[gpu]（`pip install dghs-imgutils[gpu]`） |
@@ -20,12 +20,12 @@
 | 偵測失敗 | 無臉時 `sys.exit(1)` + 清楚錯誤訊息，不輸出任何檔案 |
 | 裁切外擴倍率 | EXPAND_RATIO=1.6（bbox 寬高最大邊 ×1.6），EXTRA_TOP_RATIO=0.15 |
 | Enhance | 永遠自動執行（銳化 + 降噪 + 對比），raw 與 sr 兩版都套 |
-| 雙版本輸出 | 每張臉同時輸出 raw 版（不跑 SR）與 sr 版（跑 SR）以便比對 |
-| SR 條件 | 裁切後尺寸 < 1024 → sr 版跑 Real-ESRGAN；≥ 1024 → sr 版與 raw 版內容相同（都直接 resize） |
-| SR 模型 | `RealESRGAN_x4plus_anime_6B.pth`，放 `weights/` |
+| 雙版本輸出 | 每張臉同時輸出 raw 版（不跑 SR）與 sr 版（跑 SR）以便比對；兩版都 4096×4096 |
+| SR 條件 | 裁切後尺寸 < 4096 → sr 版**連續跑 Real-ESRGAN 直到 ≥ 4096**；≥ 4096 → sr 版與 raw 版內容相同（都直接 resize） |
+| SR 模型 | `RealESRGAN_x4plus_anime_6B.pth`，放 `weights/`；tile=1024 固定分塊；fp16（VRAM 砍半）；每輪 SR 後 `torch.cuda.empty_cache()` 防 pass #3 OOM |
 | 路徑處理 | pathlib + PIL |
 | 中間結果 | 不儲存 |
-| 平台 | Windows 11 + NVIDIA 4060+ |
+| 平台 | Windows 11 + NVIDIA RTX 3090 24GB |
 | 程式碼註解 | 繁體中文 |
 | basicsr 修補 | 手改套件原始碼（見 1.5） |
 
@@ -200,17 +200,72 @@ sbhead-generater/
 
 ### 6.2 端到端測試
 
-- [ ] 6.2.1 單臉圖：確認 `outputs/raw/output.png` 與 `outputs/sr/output.png` 同步產生
-- [ ] 6.2.2 多臉圖：確認 N 張臉產生 N 對檔案、編號連續、raw/sr 兩邊同步
-- [ ] 6.2.3 連跑兩次：確認編號接續、不覆蓋既有檔案
-- [ ] 6.2.4 1.6x 視覺確認：對比舊版本與 1.6x 的裁切結果
-- [ ] 6.2.5 大圖（裁切 ≥ 1024）：確認 raw 與 sr 兩版內容相同（都跳過 SR）
-- [ ] 6.2.6 無臉圖：`sys.exit(1)` 行為不變
-- [ ] 6.2.7 模型 cache：多臉時確認 Real-ESRGAN 只載入一次
+- [x] 6.2.1 單臉圖：確認 `outputs/raw/output.png` 與 `outputs/sr/output.png` 同步產生
+- [x] 6.2.2 多臉圖：確認 N 張臉產生 N 對檔案、編號連續、raw/sr 兩邊同步
+- [x] 6.2.3 連跑兩次：確認編號接續、不覆蓋既有檔案
+- [x] 6.2.4 1.6x 視覺確認：對比舊版本與 1.6x 的裁切結果
+- [x] 6.2.5 大圖（裁切 ≥ 1024）：確認 raw 與 sr 兩版內容相同（都跳過 SR）
+- [x] 6.2.6 無臉圖：`sys.exit(1)` 行為不變
+- [x] 6.2.7 模型 cache：多臉時確認 Real-ESRGAN 只載入一次
 
 ### 6.3 收尾
 
 - [x] 6.3.1 `git add . && git commit && git push`
+
+---
+
+## 階段 7：v3 改版（輸出 4096×4096）
+
+> v2 完成後追加的需求：把輸出解析度從 1024×1024 拉到 4096×4096，
+> 用以凸顯 Real-ESRGAN 對「低解析度上採」的優勢。
+
+**變更摘要：**
+- `OUTPUT_SIZE` 全面 1024 → 4096
+- `upscale_image` 改為迴圈：x4plus 一次 ×4，反覆執行直到輸出邊長 ≥ 4096
+- raw 版維持「不跑 SR、直接傳統 resize 到 4096」（明顯模糊正是要顯示 SR 的優勢）
+- 觸發條件：裁切 < 4096 跑 SR；裁切 ≥ 4096 跳過（sr = raw）
+- 不去背（評估後使用者決定不做）
+- **GPU 從 4060 8GB 升級為 3090 24GB**，連帶調整 SR 品質設定：
+  - `tile=400` → `tile=0` → **tile=1024（最終）**：tile=0/2048 + fp32 實測 pass #3 OOM（需 16GB+）；改 tile=1024 + fp16 + empty_cache 後穩定
+  - `half=True (fp16)` → `half=False (fp32)` → **half=True（最終）**：fp32 + tile=2048 仍 OOM，回 fp16 後每塊約 1GB、安全
+
+**已知副作用：**
+- 單張 PNG ≈ 5–20 MB，多臉合照單次執行可能輸出 50–200 MB
+- 小裁切（< 1024）需跑 2 次 SR pass；tile=1024 + fp16 每輪後 empty_cache，VRAM 峰值約 4–8GB
+- fp16 約 fp32 一半 VRAM；3090 24GB 充裕
+
+### 7.0 規格文件同步（先動 MD，再動程式碼）
+
+- [x] 7.0.1 更新 `CLAUDE.md`：設計決策表、處理流程、模組規格
+- [x] 7.0.2 更新 `PLAN.md`：本變更紀錄與階段 7 任務清單
+- [x] 7.0.3 更新 `README.md`：所有 1024 改為 4096、處理流程章節同步
+
+### 7.1 程式碼修改
+
+- [x] 7.1.1 `main.py`：`OUTPUT_SIZE` 1024 → 4096
+- [x] 7.1.2 `utils/avatar_output.py`：`OUTPUT_SIZE` 1024 → 4096
+- [x] 7.1.3 `utils/super_resolution.py`：
+  - 新增 `TARGET_SIZE = 4096`、`TILE_SIZE = 1024` 常數
+  - `RealESRGANer(half=True, tile=1024)` fp16 + 固定分塊（VRAM 砍半、每塊約 1GB）
+  - `upscale_image` 改為 while 迴圈，反覆 SR 直到 min(h, w) ≥ TARGET_SIZE
+  - 每輪 SR 結束呼叫 `torch.cuda.empty_cache()` 釋放 caching allocator 殘留，防止後輪 OOM
+  - 印出每一輪 SR 的輸入 / 輸出尺寸與 tile 大小，方便 demo 觀察
+  - fallback（cv2.resize）一次性放大到「目標 ÷ 短邊」倍率，不再進迴圈
+
+### 7.2 端到端測試
+
+- [ ] 7.2.1 小裁切（< 1024）：確認連續跑 2 次 SR、最終輸出 4096
+- [ ] 7.2.2 中裁切（1024 ≤ 裁切 < 4096）：確認跑 1 次 SR + resize 4096
+- [ ] 7.2.3 大裁切（≥ 4096）：確認跳過 SR、raw 與 sr 內容相同
+- [ ] 7.2.4 多臉圖：確認模型仍只載入一次、多次 SR 不會重新載入
+- [ ] 7.2.5 3090 24GB VRAM：
+  - 確認 tile=1024 + fp16 + empty_cache 在三輪 SR（167→668→2672→10688）不會 OOM
+  - 用 nvidia-smi 觀察峰值 VRAM；若意外 OOM 確認 fallback 正常觸發
+- [ ] 7.2.6 檔案大小檢查：確認 PNG 在合理範圍（< 30 MB）
+
+### 7.3 收尾
+
+- [x] 7.3.1 `git add . && git commit && git push`
 
 ---
 
@@ -225,3 +280,11 @@ sbhead-generater/
 - 2026-05-25｜階段 2～5.2 完成｜五個 utils 模組全部實作完成，main.py 整合完成，端到端測試全數通過（使用者本機驗證）。README.md 與計畫書.md 已同步最終設計。剩餘 5.3 最終 commit & push。
 - 2026-05-25｜階段 5.3 完成、進入 v2 改版｜v1 push 完成。使用者提出 3 項變更：(1) crop EXPAND_RATIO 1.9 → 1.6（分兩次調整）；(2) 多臉全處理（按偵測器原順序、單張失敗跳過）；(3) raw/sr 雙版本輸出至 `outputs/raw/` 與 `outputs/sr/`（兩邊編號同步、enhance 兩版都套、≥1024 時兩版相同）。新增階段 6。
 - 2026-05-25｜階段 6 完成｜v2 程式碼（多臉 + 雙版本）push 完成。README.md 整合計畫書內容後，計畫書.md 刪除。EXPAND_RATIO 最終定為 1.6。所有 MD 文件內容一致。
+- 2026-05-26｜進入 v3 改版｜使用者要求輸出解析度 1024 → 4096。原本同時想加去背功能，評估後（動漫去背需 anime 專用 ISNet 模型、檔案大小翻倍、效果視輸入而定）使用者決定不做。新增階段 7：OUTPUT_SIZE 全面 1024 → 4096、`upscale_image` 改為 while 迴圈反覆 SR 直到 ≥ 4096、raw 也拉到 4096 以凸顯 SR 優勢。
+- 2026-05-26｜v3 規格追加（GPU 升級）｜使用者本機從 RTX 4060 8GB 升級至 RTX 3090 24GB，連帶調整最高品質設定：`tile=400` → `tile=1024`（消除 4096 大圖的 tile 拼接縫）、`half=True (fp16)` → `half=False (fp32)`（提升動漫平塗區色塊純度）。輸出解析度維持 4096、enhance 參數維持保守不動、SR 模型仍用 6B anime 專用版（換 23B 通用版反而會破壞動漫風）。
+- 2026-05-26｜v3 規格再追加（tile=0）｜使用者要求 tile 改為 0（不分塊，零拼接縫）。經估算：小裁切連跑 2 次 SR 的第 2 次（輸入可達 3200+）+ fp32 + tile=0 預估 25–35GB VRAM、會 OOM。決議：每次 SR pass 前動態決定 tile size，**輸入 ≤ 2048 用 tile=0、> 2048 用 tile=2048**。實務上 4096 大圖只切 4 塊、拼接縫肉眼幾乎無感。Enhance amount 維持 0.3（評估後使用者選擇不加重，避免 SR 後出現 halo）。
+- 2026-05-26｜v3 程式碼完成｜階段 7.1 三支程式碼修改完成並 push（commit `b0d5afa`）：`main.py` 與 `utils/avatar_output.py` 的 `OUTPUT_SIZE` 1024 → 4096、`utils/super_resolution.py` 新增 while 迴圈 + 動態 tile 機制（以 `upsampler.tile_size = tile` 動態修改屬性、模型只載入一次）+ fp32 固定。stage 7.2 端到端測試由使用者本機驗證中。
+- 2026-05-26｜MD 一致性整理｜CLAUDE.md `save_paired_avatar` 規格描述修正 1024×1024 → 4096×4096（舊版遺漏未改）；README.md 注意 3 措辭調整（移除已不存在的「1024 版本」對照）；PLAN.md 階段 6.2 全數標 [x]（v2 測試使用者已驗證通過）、階段 7.0.3、7.1.x、7.3.1 標 [x] 反映實際進度。歷史性的任務描述（階段 2 的 `save_avatar`、階段 6 的 `detect_largest_face`）刻意保留以呈現演進軌跡，由 Changelog 明確標示時間線。
+- 2026-05-26｜OOM 修正（tile=1024 + fp16 + empty_cache）｜使用者以 debug_oom.py 追蹤確認：fp32×tile=2048 + caching allocator 殘留 → pass #3（輸入 2672×2672）需 16GB 連續空間、3090 24GB 實際可用 12.18GB → OOM。修正：`half=True`（fp16，VRAM 砍半）、`TILE_SIZE = 1024`（移除動態 tile 邏輯）、每輪 SR 後 `torch.cuda.empty_cache()`（釋放殘留）。移除 `_pick_tile_for_size`、`TILE_SAFE_THRESHOLD`、`TILE_SAFE` 三個舊有常數與函式。
+- 2026-05-26｜SR 軟化實驗（raw × α 混合）→ 已 revert｜使用者反映 sr 4096「黑線粗黑、飽和度偏高」，diagnose 為 x4plus_anime_6B GAN baseline 偏好。嘗試在 `save_paired_avatar` 寫檔前以 `SR_BLEND_ALPHA = 0.35` 把 raw 4096 線性混入 sr。實測結果三大問題：(1) 軟過頭、SR 細節被稀釋；(2) raw 本身是 enhance + 傳統 resize、本來就糊，混進去拖累 sr；(3) sr 太像 raw、失去「raw vs sr 對照」的設計使命。冷靜回頭看原 sr 的硬感其實可接受 → 直接 revert 此次 commit，sr 保留純 Real-ESRGAN 輸出。**未來教訓**：要修「SR 硬感」不能用「混回低品質的 raw」這招（兩個版本品質差太多），若日後仍要動，應從「SR 後做 bilateral filter 保邊降噪」或「換 denoise_strength 可調的模型」方向著手，而非加權平均。
+- 2026-05-26｜文件同步至最終版｜將所有文件對齊目前實作（commit `c03d8d4`）：PLAN.md 階段 7.1.3 任務描述改寫為「TILE_SIZE=1024 + fp16 + empty_cache」現況（移除已不適用的「動態 tile size」敘述）；README.md 注意 3 補充 SR pass 次數（小裁切 2–3 次）與目前的 VRAM 管理策略（tile=1024 + fp16 + 每輪 empty_cache）。CLAUDE.md 設計決策表、模組規格與處理流程已隨各次 commit 同步。Changelog 完整保留 v3 全部演進歷程（tile=400→tile=0→tile=2048→tile=1024、fp32→fp16、SR 軟化實驗→revert）作為設計演進軌跡。
