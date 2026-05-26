@@ -8,8 +8,8 @@
     2. 讀圖（PIL → numpy RGB）
     3. 動漫臉部偵測（dghs-imgutils）：取得畫面上所有臉部 bbox
     4. 對每一張臉依序：裁切 → enhance → raw/sr 雙版本輸出
-       - raw 版：直接 resize 1024
-       - sr 版：< 1024 跑 Real-ESRGAN；≥ 1024 直接 resize（與 raw 同）
+       - raw 版：直接 resize 4096
+       - sr 版：< 4096 連續跑 Real-ESRGAN 直到 ≥ 4096；≥ 4096 直接 resize（與 raw 同）
 
 輸出位置：main.py 同層的 outputs/raw/ 與 outputs/sr/ 兩個子資料夾。
 檔名 output.png / output(1).png / output(2).png …，
@@ -32,7 +32,7 @@ from utils import (
 )
 
 # === 全域設定 ===
-OUTPUT_SIZE = 1024
+OUTPUT_SIZE = 4096
 SUPPORTED_EXTS = {".jpg", ".jpeg", ".png"}
 PROJECT_ROOT = Path(__file__).parent
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
@@ -77,15 +77,15 @@ def process_single_face(
     """處理單一張臉，回傳 (raw_image, sr_image)。
 
     raw 版：裁切 → enhance（不跑 SR）
-    sr  版：裁切 → enhance → 若 < 1024 跑 Real-ESRGAN；≥ 1024 同 raw
+    sr  版：裁切 → enhance → 若 < 4096 連續跑 Real-ESRGAN 直到 ≥ 4096；≥ 4096 同 raw
 
     Args:
         image: 整張原圖（RGB）。
         bbox: 該張臉的 bbox (x0, y0, x1, y1)。
 
     Returns:
-        (raw_image, sr_image)：兩張待寫入的 RGB 圖（尚未 resize 到 1024）。
-        後續由 save_paired_avatar 統一 resize 為 1024×1024 後輸出。
+        (raw_image, sr_image)：兩張待寫入的 RGB 圖（尚未 resize 到 OUTPUT_SIZE）。
+        後續由 save_paired_avatar 統一 resize 為 OUTPUT_SIZE × OUTPUT_SIZE 後輸出。
     """
     # [1/4] 裁切
     cropped = crop_by_bbox(image, bbox)

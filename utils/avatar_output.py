@@ -1,6 +1,6 @@
 """大頭貼輸出模組（raw / sr 雙版本同步）。
 
-每張臉同時輸出兩個 1024×1024 PNG 版本：
+每張臉同時輸出兩個 4096×4096 PNG 版本：
 - `outputs_dir/raw/output(N).png`：未做超解析度的版本
 - `outputs_dir/sr/output(N).png`：做完超解析度的版本
 
@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-OUTPUT_SIZE = 1024
+OUTPUT_SIZE = 4096
 RAW_SUBDIR = "raw"
 SR_SUBDIR = "sr"
 
@@ -85,7 +85,7 @@ def save_paired_avatar(
     outputs_dir: Path,
     index: int,
 ) -> tuple[Path, Path]:
-    """同時將 raw 與 sr 兩張圖輸出為 1024×1024 PNG。
+    """同時將 raw 與 sr 兩張圖輸出為 4096×4096 PNG。
 
     raw 寫到 `outputs_dir/raw/`、sr 寫到 `outputs_dir/sr/`，
     兩邊使用同一個 index 對應的檔名（保證對比時編號一致）。
@@ -94,7 +94,7 @@ def save_paired_avatar(
 
     Args:
         raw_image: 未做 SR 的 RGB 圖片。
-        sr_image: 做完 SR 的 RGB 圖片（若裁切 ≥ 1024 可能與 raw 相同）。
+        sr_image: 做完 SR 的 RGB 圖片（若裁切 ≥ 4096 可能與 raw 相同）。
         outputs_dir: 輸出根資料夾（會自動建立 raw/ 與 sr/）。
         index: 本張臉的編號（由 next_paired_index 取得後逐張 +1）。
 
