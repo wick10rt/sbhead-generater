@@ -22,7 +22,7 @@
 | Enhance | 永遠自動執行（銳化 + 降噪 + 對比），raw 與 sr 兩版都套 |
 | 雙版本輸出 | 每張臉同時輸出 raw 版（不跑 SR）與 sr 版（跑 SR）以便比對；兩版都 4096×4096 |
 | SR 條件 | 裁切後尺寸 < 4096 → sr 版**連續跑 Real-ESRGAN 直到 ≥ 4096**；≥ 4096 → sr 版與 raw 版內容相同（都直接 resize） |
-| SR 模型 | `RealESRGAN_x4plus_anime_6B.pth`，放 `weights/`；tile=0 不分塊（輸入 > 2048 自動降為 tile=2048 防 OOM）；fp32（3090 24GB 解鎖最高品質設定） |
+| SR 模型 | `RealESRGAN_x4plus_anime_6B.pth`，放 `weights/`；tile=1024 固定分塊；fp16（VRAM 砍半）；每輪 SR 後 `torch.cuda.empty_cache()` 防 pass #3 OOM |
 | 路徑處理 | pathlib + PIL |
 | 中間結果 | 不儲存 |
 | 平台 | Windows 11 + NVIDIA RTX 3090 24GB |
@@ -225,14 +225,14 @@ sbhead-generater/
 - raw 版維持「不跑 SR、直接傳統 resize 到 4096」（明顯模糊正是要顯示 SR 的優勢）
 - 觸發條件：裁切 < 4096 跑 SR；裁切 ≥ 4096 跳過（sr = raw）
 - 不去背（評估後使用者決定不做）
-- **GPU 從 4060 8GB 升級為 3090 24GB**，連帶解鎖兩項最高品質設定：
-  - `tile=400` → `tile=0`（不分塊）：徹底消除 tile 拼接縫；但因 24GB 仍可能在「小裁切連跑 2 次 SR」的第 2 次（輸入可達 3200+）OOM，加入安全機制：**SR 前檢查輸入邊長，> 2048 自動降為 tile=2048**（4096 大圖只切 4 塊、拼接縫幾乎看不見）
-  - `half=True (fp16)` → `half=False (fp32)`：動漫平塗區數值精度更高，色塊更乾淨
+- **GPU 從 4060 8GB 升級為 3090 24GB**，連帶調整 SR 品質設定：
+  - `tile=400` → `tile=0` → **tile=1024（最終）**：tile=0/2048 + fp32 實測 pass #3 OOM（需 16GB+）；改 tile=1024 + fp16 + empty_cache 後穩定
+  - `half=True (fp16)` → `half=False (fp32)` → **half=True（最終）**：fp32 + tile=2048 仍 OOM，回 fp16 後每塊約 1GB、安全
 
 **已知副作用：**
 - 單張 PNG ≈ 5–20 MB，多臉合照單次執行可能輸出 50–200 MB
-- 小裁切（< 1024）需跑 2 次 SR pass，但因 tile=0/2048、fp32 一次推更多像素，總時間視 GPU 利用率而定
-- fp32 約 2× VRAM、2× 計算量；3090 24GB 仍十分充裕
+- 小裁切（< 1024）需跑 2 次 SR pass；tile=1024 + fp16 每輪後 empty_cache，VRAM 峰值約 4–8GB
+- fp16 約 fp32 一半 VRAM；3090 24GB 充裕
 
 ### 7.0 規格文件同步（先動 MD，再動程式碼）
 
@@ -245,8 +245,8 @@ sbhead-generater/
 - [x] 7.1.1 `main.py`：`OUTPUT_SIZE` 1024 → 4096
 - [x] 7.1.2 `utils/avatar_output.py`：`OUTPUT_SIZE` 1024 → 4096
 - [x] 7.1.3 `utils/super_resolution.py`：
-  - 新增 `TARGET_SIZE = 4096`、`TILE_SAFE_THRESHOLD = 2048`、`TILE_SAFE = 2048` 常數
-  - `RealESRGANer(half=False)` 永遠 fp32（不再依 CUDA 切換）
+  - 新增 `TARGET_SIZE = 4096`、`TILE_SIZE = 1024` 常數（移除舊 TILE_SAFE_THRESHOLD / TILE_SAFE）
+  - `RealESRGANer(half=True)` fp16（降低 VRAM；移除 _pick_tile_for_size 動態邏輯）
   - 改為「每次 SR pass 動態決定 tile size」：輸入邊長 ≤ TILE_SAFE_THRESHOLD 用 tile=0（不分塊），> TILE_SAFE_THRESHOLD 用 tile=TILE_SAFE（=2048）防 OOM
     - 實作上以 `upsampler.tile_size = tile` 動態修改屬性，毋須重建 upsampler，模型權重只載入一次
   - `upscale_image` 改為 while 迴圈，反覆 SR 直到 min(h, w) ≥ TARGET_SIZE
@@ -260,8 +260,7 @@ sbhead-generater/
 - [ ] 7.2.3 大裁切（≥ 4096）：確認跳過 SR、raw 與 sr 內容相同
 - [ ] 7.2.4 多臉圖：確認模型仍只載入一次、多次 SR 不會重新載入
 - [ ] 7.2.5 3090 24GB VRAM：
-  - 確認 tile=0 在「輸入 ≤ 2048」情境下不會 OOM
-  - 確認 tile=2048 在「輸入 3200~3500」情境下不會 OOM
+  - 確認 tile=1024 + fp16 + empty_cache 在三輪 SR（167→668→2672→10688）不會 OOM
   - 用 nvidia-smi 觀察峰值 VRAM；若意外 OOM 確認 fallback 正常觸發
 - [ ] 7.2.6 檔案大小檢查：確認 PNG 在合理範圍（< 30 MB）
 
@@ -287,3 +286,4 @@ sbhead-generater/
 - 2026-05-26｜v3 規格再追加（tile=0）｜使用者要求 tile 改為 0（不分塊，零拼接縫）。經估算：小裁切連跑 2 次 SR 的第 2 次（輸入可達 3200+）+ fp32 + tile=0 預估 25–35GB VRAM、會 OOM。決議：每次 SR pass 前動態決定 tile size，**輸入 ≤ 2048 用 tile=0、> 2048 用 tile=2048**。實務上 4096 大圖只切 4 塊、拼接縫肉眼幾乎無感。Enhance amount 維持 0.3（評估後使用者選擇不加重，避免 SR 後出現 halo）。
 - 2026-05-26｜v3 程式碼完成｜階段 7.1 三支程式碼修改完成並 push（commit `b0d5afa`）：`main.py` 與 `utils/avatar_output.py` 的 `OUTPUT_SIZE` 1024 → 4096、`utils/super_resolution.py` 新增 while 迴圈 + 動態 tile 機制（以 `upsampler.tile_size = tile` 動態修改屬性、模型只載入一次）+ fp32 固定。stage 7.2 端到端測試由使用者本機驗證中。
 - 2026-05-26｜MD 一致性整理｜CLAUDE.md `save_paired_avatar` 規格描述修正 1024×1024 → 4096×4096（舊版遺漏未改）；README.md 注意 3 措辭調整（移除已不存在的「1024 版本」對照）；PLAN.md 階段 6.2 全數標 [x]（v2 測試使用者已驗證通過）、階段 7.0.3、7.1.x、7.3.1 標 [x] 反映實際進度。歷史性的任務描述（階段 2 的 `save_avatar`、階段 6 的 `detect_largest_face`）刻意保留以呈現演進軌跡，由 Changelog 明確標示時間線。
+- 2026-05-26｜OOM 修正（tile=1024 + fp16 + empty_cache）｜使用者以 debug_oom.py 追蹤確認：fp32×tile=2048 + caching allocator 殘留 → pass #3（輸入 2672×2672）需 16GB 連續空間、3090 24GB 實際可用 12.18GB → OOM。修正：`half=True`（fp16，VRAM 砍半）、`TILE_SIZE = 1024`（移除動態 tile 邏輯）、每輪 SR 後 `torch.cuda.empty_cache()`（釋放殘留）。移除 `_pick_tile_for_size`、`TILE_SAFE_THRESHOLD`、`TILE_SAFE` 三個舊有常數與函式。

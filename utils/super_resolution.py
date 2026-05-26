@@ -4,11 +4,11 @@
 x4plus 一次只能放大 4 倍，為達到目標尺寸（4096）會以 while 迴圈反覆執行
 直到短邊 ≥ TARGET_SIZE 才回傳。
 
-品質設定（3090 24GB 解鎖）：
-- fp32（half=False）：動漫平塗區色塊更乾淨
-- tile=0 不分塊：邊緣零拼接縫
-- 安全機制：每輪 SR 前檢查輸入邊長，> TILE_SAFE_THRESHOLD 時改用
-  tile=TILE_SAFE 防 OOM（4096 大圖只切 4 塊、拼接縫肉眼幾乎無感）
+VRAM 管理策略（3090 24GB）：
+- fp16（half=True）：VRAM 砍半，動漫圖品質影響極小
+- tile=TILE_SIZE（固定 1024）分塊推論：避免整圖一次前向吃爆 VRAM
+- 每輪 SR 結束呼叫 torch.cuda.empty_cache()：
+  防止 caching allocator 累積記憶體（pass #2 殘留 → pass #3 可用空間不足）
 
 模型載入失敗或推論失敗時，自動 fallback 到 cv2.resize（INTER_CUBIC）並印警告。
 """
@@ -30,9 +30,8 @@ SR_SCALE = 4
 # 目標輸出短邊（while 迴圈停止條件）
 TARGET_SIZE = 4096
 
-# tile 安全機制：輸入邊長 > TILE_SAFE_THRESHOLD 時改用 TILE_SAFE 防 OOM
-TILE_SAFE_THRESHOLD = 2048
-TILE_SAFE = 2048
+# 固定 tile 大小：1024 在 fp16 下每塊約 1 GB，安全不 OOM
+TILE_SIZE = 1024
 TILE_PAD = 10
 
 # 模型物件 cache（首次推論時載入，後續多張臉共用）
@@ -41,8 +40,6 @@ _upsampler = None
 
 def _load_model():
     """延遲載入 Real-ESRGAN 模型並 cache。
-
-    建構時用 tile=0；每次推論前由 upscale_image 動態切換 tile。
 
     Raises:
         FileNotFoundError: 找不到權重檔。
@@ -80,30 +77,22 @@ def _load_model():
             scale=SR_SCALE,
             model_path=str(WEIGHTS_PATH),
             model=model,
-            tile=0,                    # 初始不分塊；每輪推論前動態調整
+            tile=TILE_SIZE,
             tile_pad=TILE_PAD,
             pre_pad=0,
-            half=False,                # 固定 fp32，追求最高品質
+            half=True,             # fp16：VRAM 砍半，動漫圖品質影響極小
             gpu_id=0 if use_cuda else None,
         )
 
     return _upsampler
 
 
-def _pick_tile_for_size(side: int) -> int:
-    """依輸入邊長決定本輪 SR 使用的 tile size。
-
-    ≤ TILE_SAFE_THRESHOLD：tile=0（不分塊、零拼接縫）
-    > TILE_SAFE_THRESHOLD：tile=TILE_SAFE（防 OOM、4 塊幾乎無縫）
-    """
-    return 0 if side <= TILE_SAFE_THRESHOLD else TILE_SAFE
-
-
 def upscale_image(image: np.ndarray) -> np.ndarray:
     """使用 Real-ESRGAN 將 RGB 圖片放大至短邊 ≥ TARGET_SIZE。
 
     x4plus 每次 ×4，內部 while 迴圈反覆執行直到短邊 ≥ TARGET_SIZE 才回傳。
-    每輪 SR 前依輸入邊長動態決定 tile：≤ 2048 用 0、> 2048 用 2048。
+    每輪 SR 結束呼叫 torch.cuda.empty_cache() 釋放 caching allocator 殘留記憶體，
+    防止多輪 SR 累積導致後輪 OOM（167→668→2672 場景已驗證）。
 
     若 SR 失敗（權重缺、CUDA OOM 等），自動 fallback 到 cv2.resize 並印警告，
     fallback 一次性放大到「短邊 ≥ TARGET_SIZE」所需倍率。
@@ -116,6 +105,7 @@ def upscale_image(image: np.ndarray) -> np.ndarray:
         TARGET_SIZE × TARGET_SIZE 輸出。
     """
     try:
+        import torch
         upsampler = _load_model()
         # RealESRGANer.enhance 內部以 BGR 處理（與 cv2 慣例一致）
         bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
@@ -124,12 +114,10 @@ def upscale_image(image: np.ndarray) -> np.ndarray:
         while min(bgr.shape[:2]) < TARGET_SIZE:
             pass_index += 1
             in_h, in_w = bgr.shape[:2]
-            tile = _pick_tile_for_size(max(in_h, in_w))
-            upsampler.tile_size = tile   # RealESRGANer 內部用 tile_size 屬性
+            upsampler.tile_size = TILE_SIZE  # 確保每輪都是固定 tile
 
-            tile_label = "0（不分塊）" if tile == 0 else str(tile)
             print(
-                f"        SR pass #{pass_index}：輸入 {in_w}×{in_h}、tile={tile_label}",
+                f"        SR pass #{pass_index}：輸入 {in_w}×{in_h}、tile={TILE_SIZE}",
                 flush=True,
             )
 
@@ -140,6 +128,10 @@ def upscale_image(image: np.ndarray) -> np.ndarray:
                 f"        SR pass #{pass_index}：輸出 {out_w}×{out_h}",
                 flush=True,
             )
+
+            # 釋放 caching allocator 殘留，避免多輪 SR 累積記憶體導致後輪 OOM
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
 
@@ -174,7 +166,7 @@ if __name__ == "__main__":
     img = np.array(Image.open(test_path).convert("RGB"))
 
     # 縮成 800×800 模擬「裁切後 < 4096」的情境，會跑 2 次 SR
-    # （800 → 3200 → 12800），第 2 次自動降為 tile=2048
+    # （800 → 3200 → 12800），tile=1024、fp16、each pass empty_cache
     small = cv2.resize(img, (800, 800), interpolation=cv2.INTER_AREA)
     print(f"輸入（縮小後）：{small.shape}")
     print(f"目標短邊：≥ {TARGET_SIZE}")
