@@ -245,13 +245,12 @@ sbhead-generater/
 - [x] 7.1.1 `main.py`：`OUTPUT_SIZE` 1024 → 4096
 - [x] 7.1.2 `utils/avatar_output.py`：`OUTPUT_SIZE` 1024 → 4096
 - [x] 7.1.3 `utils/super_resolution.py`：
-  - 新增 `TARGET_SIZE = 4096`、`TILE_SIZE = 1024` 常數（移除舊 TILE_SAFE_THRESHOLD / TILE_SAFE）
-  - `RealESRGANer(half=True)` fp16（降低 VRAM；移除 _pick_tile_for_size 動態邏輯）
-  - 改為「每次 SR pass 動態決定 tile size」：輸入邊長 ≤ TILE_SAFE_THRESHOLD 用 tile=0（不分塊），> TILE_SAFE_THRESHOLD 用 tile=TILE_SAFE（=2048）防 OOM
-    - 實作上以 `upsampler.tile_size = tile` 動態修改屬性，毋須重建 upsampler，模型權重只載入一次
+  - 新增 `TARGET_SIZE = 4096`、`TILE_SIZE = 1024` 常數
+  - `RealESRGANer(half=True, tile=1024)` fp16 + 固定分塊（VRAM 砍半、每塊約 1GB）
   - `upscale_image` 改為 while 迴圈，反覆 SR 直到 min(h, w) ≥ TARGET_SIZE
-  - 印出每一輪 SR 的輸入 / 輸出尺寸與本輪使用的 tile，方便 demo 觀察
-  - fallback（cv2.resize）改為一次性放大到「目標 ÷ 短邊」倍率
+  - 每輪 SR 結束呼叫 `torch.cuda.empty_cache()` 釋放 caching allocator 殘留，防止後輪 OOM
+  - 印出每一輪 SR 的輸入 / 輸出尺寸與 tile 大小，方便 demo 觀察
+  - fallback（cv2.resize）一次性放大到「目標 ÷ 短邊」倍率，不再進迴圈
 
 ### 7.2 端到端測試
 
@@ -288,3 +287,4 @@ sbhead-generater/
 - 2026-05-26｜MD 一致性整理｜CLAUDE.md `save_paired_avatar` 規格描述修正 1024×1024 → 4096×4096（舊版遺漏未改）；README.md 注意 3 措辭調整（移除已不存在的「1024 版本」對照）；PLAN.md 階段 6.2 全數標 [x]（v2 測試使用者已驗證通過）、階段 7.0.3、7.1.x、7.3.1 標 [x] 反映實際進度。歷史性的任務描述（階段 2 的 `save_avatar`、階段 6 的 `detect_largest_face`）刻意保留以呈現演進軌跡，由 Changelog 明確標示時間線。
 - 2026-05-26｜OOM 修正（tile=1024 + fp16 + empty_cache）｜使用者以 debug_oom.py 追蹤確認：fp32×tile=2048 + caching allocator 殘留 → pass #3（輸入 2672×2672）需 16GB 連續空間、3090 24GB 實際可用 12.18GB → OOM。修正：`half=True`（fp16，VRAM 砍半）、`TILE_SIZE = 1024`（移除動態 tile 邏輯）、每輪 SR 後 `torch.cuda.empty_cache()`（釋放殘留）。移除 `_pick_tile_for_size`、`TILE_SAFE_THRESHOLD`、`TILE_SAFE` 三個舊有常數與函式。
 - 2026-05-26｜SR 軟化實驗（raw × α 混合）→ 已 revert｜使用者反映 sr 4096「黑線粗黑、飽和度偏高」，diagnose 為 x4plus_anime_6B GAN baseline 偏好。嘗試在 `save_paired_avatar` 寫檔前以 `SR_BLEND_ALPHA = 0.35` 把 raw 4096 線性混入 sr。實測結果三大問題：(1) 軟過頭、SR 細節被稀釋；(2) raw 本身是 enhance + 傳統 resize、本來就糊，混進去拖累 sr；(3) sr 太像 raw、失去「raw vs sr 對照」的設計使命。冷靜回頭看原 sr 的硬感其實可接受 → 直接 revert 此次 commit，sr 保留純 Real-ESRGAN 輸出。**未來教訓**：要修「SR 硬感」不能用「混回低品質的 raw」這招（兩個版本品質差太多），若日後仍要動，應從「SR 後做 bilateral filter 保邊降噪」或「換 denoise_strength 可調的模型」方向著手，而非加權平均。
+- 2026-05-26｜文件同步至最終版｜將所有文件對齊目前實作（commit `c03d8d4`）：PLAN.md 階段 7.1.3 任務描述改寫為「TILE_SIZE=1024 + fp16 + empty_cache」現況（移除已不適用的「動態 tile size」敘述）；README.md 注意 3 補充 SR pass 次數（小裁切 2–3 次）與目前的 VRAM 管理策略（tile=1024 + fp16 + 每輪 empty_cache）。CLAUDE.md 設計決策表、模組規格與處理流程已隨各次 commit 同步。Changelog 完整保留 v3 全部演進歷程（tile=400→tile=0→tile=2048→tile=1024、fp32→fp16、SR 軟化實驗→revert）作為設計演進軌跡。
