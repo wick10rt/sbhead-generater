@@ -37,6 +37,7 @@
 | 裁切外擴倍率 | EXPAND_RATIO=1.6（bbox 寬高最大邊 ×1.6），EXTRA_TOP_RATIO=0.15（向上偏移以包含頭髮） |
 | Enhance | 永遠自動執行（銳化 + 降噪 + 對比），raw 與 sr 兩版都套 |
 | 雙版本輸出 | 每張臉同時輸出 raw 版（不跑 SR）與 sr 版（跑 SR）以便比對；兩版都 4096×4096 |
+| SR 軟化 | `SR_BLEND_ALPHA = 0.35`：sr 版寫檔前與 raw 4096 線性混合（軟化 x4plus_anime_6B 推線條/推飽和的硬感）。裁切 ≥ 4096 時 sr 與 raw 是同一物件，跳過混合 |
 | SR 條件 | 裁切後尺寸 < 4096 → sr 版**連續跑 Real-ESRGAN 直到 ≥ 4096** 後 resize；≥ 4096 → sr 版與 raw 版內容相同（都直接 resize） |
 | SR 模型 | `RealESRGAN_x4plus_anime_6B.pth`，放 `weights/`；**tile=1024 固定分塊**；**fp16**（VRAM 砍半，動漫圖品質影響極小）；每輪 SR 後 `torch.cuda.empty_cache()` 釋放殘留（防 pass #3 OOM） |
 | 路徑處理 | pathlib + PIL |
@@ -146,6 +147,8 @@ for i in range(N):                ← 對每張臉跑同樣流程
   - `output.png` 視為 index 0，`output(N).png` 視為 index N
 - 函式 2：`save_paired_avatar(raw_image, sr_image, outputs_dir: Path, index: int) -> tuple[Path, Path]`
   - 把 raw 與 sr 兩張圖各 resize 到 4096×4096，存到 `outputs_dir/raw/` 與 `outputs_dir/sr/` 同名檔案
+  - **SR 軟化**：sr 寫檔前以 `SR_BLEND_ALPHA=0.35` 與 raw 4096 線性混合（`cv2.addWeighted`），純 CPU 運算、不碰 GPU、不增加 VRAM
+  - 若 `sr_image is raw_image`（裁切 ≥ 4096 跳過 SR）→ 跳過混合
   - 命名：index=0 → `output.png`、index=N → `output(N).png`
   - 自動建立 `raw/` 與 `sr/` 子資料夾
 
