@@ -38,10 +38,10 @@
 | Enhance | 永遠自動執行（銳化 + 降噪 + 對比），raw 與 sr 兩版都套 |
 | 雙版本輸出 | 每張臉同時輸出 raw 版（不跑 SR）與 sr 版（跑 SR）以便比對；兩版都 4096×4096 |
 | SR 條件 | 裁切後尺寸 < 4096 → sr 版**連續跑 Real-ESRGAN 直到 ≥ 4096** 後 resize；≥ 4096 → sr 版與 raw 版內容相同（都直接 resize） |
-| SR 模型 | `RealESRGAN_x4plus_anime_6B.pth`，放 `weights/`，tile=400 |
+| SR 模型 | `RealESRGAN_x4plus_anime_6B.pth`，放 `weights/`，tile=1024、fp32（追求最高品質） |
 | 路徑處理 | pathlib + PIL |
 | 中間結果 | 不儲存 |
-| 平台 | Windows 11 + NVIDIA 4060+ |
+| 平台 | Windows 11 + NVIDIA RTX 3090 24GB |
 | 程式碼註解 | 繁體中文 |
 | basicsr 修補 | 手改套件原始碼（見 README.md） |
 
@@ -135,6 +135,7 @@ for i in range(N):                ← 對每張臉跑同樣流程
 - 函式：`upscale_image(image: np.ndarray) -> np.ndarray`
 - 載入 `weights/RealESRGAN_x4plus_anime_6B.pth`（路徑相對 main.py）
 - 優先使用 CUDA GPU
+- **品質設定**（3090 24GB 升級後）：`tile=1024`（大 tile，4096 大圖只切少數塊或一次推完）、`half=False`（永遠用 fp32 推論，動漫平塗區更乾淨）
 - **連續多次 SR**：x4plus 一次只能放大 4 倍。內部以 while 迴圈反覆套用 SR，直到輸出邊長 ≥ TARGET_SIZE（4096）才回傳。例：800 → 3200 → 12800（停止，後續由 avatar_output 統一 resize 回 4096）
 - 執行失敗 → fallback `cv2.resize` + 印警告（fallback 一次性放大到目標倍率，不再進迴圈）
 - 模型 cache：第一張臉觸發載入後，後續多張臉共用同一個 upsampler 實例
