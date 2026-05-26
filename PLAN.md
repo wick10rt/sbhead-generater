@@ -22,10 +22,10 @@
 | Enhance | 永遠自動執行（銳化 + 降噪 + 對比），raw 與 sr 兩版都套 |
 | 雙版本輸出 | 每張臉同時輸出 raw 版（不跑 SR）與 sr 版（跑 SR）以便比對；兩版都 4096×4096 |
 | SR 條件 | 裁切後尺寸 < 4096 → sr 版**連續跑 Real-ESRGAN 直到 ≥ 4096**；≥ 4096 → sr 版與 raw 版內容相同（都直接 resize） |
-| SR 模型 | `RealESRGAN_x4plus_anime_6B.pth`，放 `weights/`，tile=400 |
+| SR 模型 | `RealESRGAN_x4plus_anime_6B.pth`，放 `weights/`，tile=1024、fp32（3090 24GB 解鎖最高品質設定） |
 | 路徑處理 | pathlib + PIL |
 | 中間結果 | 不儲存 |
-| 平台 | Windows 11 + NVIDIA 4060+ |
+| 平台 | Windows 11 + NVIDIA RTX 3090 24GB |
 | 程式碼註解 | 繁體中文 |
 | basicsr 修補 | 手改套件原始碼（見 1.5） |
 
@@ -224,12 +224,15 @@ sbhead-generater/
 - `upscale_image` 改為迴圈：x4plus 一次 ×4，反覆執行直到輸出邊長 ≥ 4096
 - raw 版維持「不跑 SR、直接傳統 resize 到 4096」（明顯模糊正是要顯示 SR 的優勢）
 - 觸發條件：裁切 < 4096 跑 SR；裁切 ≥ 4096 跳過（sr = raw）
-- 不改 tile size（維持 400），OOM 由現有 fallback 機制兜底
 - 不去背（評估後使用者決定不做）
+- **GPU 從 4060 8GB 升級為 3090 24GB**，連帶解鎖兩項最高品質設定：
+  - `tile=400` → `tile=1024`：4096 大圖原本要切 100+ 塊，改 1024 後切到個位數塊（甚至一次推完），消除 tile 拼接縫
+  - `half=True (fp16)` → `half=False (fp32)`：動漫平塗區數值精度更高，色塊更乾淨
 
 **已知副作用：**
 - 單張 PNG ≈ 5–20 MB，多臉合照單次執行可能輸出 50–200 MB
-- 小裁切（< 1024）需跑 2 次 SR pass，耗時與 tile 拼接縫風險增加
+- 小裁切（< 1024）需跑 2 次 SR pass，但因 tile=1024、fp32 一次推更多像素，總時間視 GPU 利用率而定
+- fp32 約 2× VRAM、2× 計算量；3090 24GB 仍十分充裕
 
 ### 7.0 規格文件同步（先動 MD，再動程式碼）
 
@@ -243,6 +246,8 @@ sbhead-generater/
 - [ ] 7.1.2 `utils/avatar_output.py`：`OUTPUT_SIZE` 1024 → 4096
 - [ ] 7.1.3 `utils/super_resolution.py`：
   - 新增 `TARGET_SIZE = 4096` 常數
+  - `TILE_SIZE` 400 → 1024（3090 解鎖）
+  - `RealESRGANer(half=False)` 永遠 fp32（不再依 CUDA 切換）
   - `upscale_image` 改為 while 迴圈，反覆 SR 直到 min(h, w) ≥ TARGET_SIZE
   - 印出每一輪 SR 的輸入 / 輸出尺寸，方便 demo 觀察
   - fallback（cv2.resize）改為一次性放大到「裁切 → 目標 ÷ 裁切」倍率
@@ -253,7 +258,7 @@ sbhead-generater/
 - [ ] 7.2.2 中裁切（1024 ≤ 裁切 < 4096）：確認跑 1 次 SR + resize 4096
 - [ ] 7.2.3 大裁切（≥ 4096）：確認跳過 SR、raw 與 sr 內容相同
 - [ ] 7.2.4 多臉圖：確認模型仍只載入一次、多次 SR 不會重新載入
-- [ ] 7.2.5 4060 8GB VRAM：確認 tile=400 下 4096 輸出不會 OOM；若 OOM 確認 fallback 正常觸發
+- [ ] 7.2.5 3090 24GB VRAM：確認 tile=1024 + fp32 下 4096 輸出不會 OOM；若意外 OOM 確認 fallback 正常觸發
 - [ ] 7.2.6 檔案大小檢查：確認 PNG 在合理範圍（< 30 MB）
 
 ### 7.3 收尾
@@ -273,4 +278,5 @@ sbhead-generater/
 - 2026-05-25｜階段 2～5.2 完成｜五個 utils 模組全部實作完成，main.py 整合完成，端到端測試全數通過（使用者本機驗證）。README.md 與計畫書.md 已同步最終設計。剩餘 5.3 最終 commit & push。
 - 2026-05-25｜階段 5.3 完成、進入 v2 改版｜v1 push 完成。使用者提出 3 項變更：(1) crop EXPAND_RATIO 1.9 → 1.6（分兩次調整）；(2) 多臉全處理（按偵測器原順序、單張失敗跳過）；(3) raw/sr 雙版本輸出至 `outputs/raw/` 與 `outputs/sr/`（兩邊編號同步、enhance 兩版都套、≥1024 時兩版相同）。新增階段 6。
 - 2026-05-25｜階段 6 完成｜v2 程式碼（多臉 + 雙版本）push 完成。README.md 整合計畫書內容後，計畫書.md 刪除。EXPAND_RATIO 最終定為 1.6。所有 MD 文件內容一致。
-- 2026-05-26｜進入 v3 改版｜使用者要求輸出解析度 1024 → 4096。原本同時想加去背功能，評估後（動漫去背需 anime 專用 ISNet 模型、檔案大小翻倍、效果視輸入而定）使用者決定不做。新增階段 7：OUTPUT_SIZE 全面 1024 → 4096、`upscale_image` 改為 while 迴圈反覆 SR 直到 ≥ 4096、raw 也拉到 4096 以凸顯 SR 優勢、tile size 維持 400 靠 fallback 兜底。
+- 2026-05-26｜進入 v3 改版｜使用者要求輸出解析度 1024 → 4096。原本同時想加去背功能，評估後（動漫去背需 anime 專用 ISNet 模型、檔案大小翻倍、效果視輸入而定）使用者決定不做。新增階段 7：OUTPUT_SIZE 全面 1024 → 4096、`upscale_image` 改為 while 迴圈反覆 SR 直到 ≥ 4096、raw 也拉到 4096 以凸顯 SR 優勢。
+- 2026-05-26｜v3 規格追加（GPU 升級）｜使用者本機從 RTX 4060 8GB 升級至 RTX 3090 24GB，連帶調整最高品質設定：`tile=400` → `tile=1024`（消除 4096 大圖的 tile 拼接縫）、`half=True (fp16)` → `half=False (fp32)`（提升動漫平塗區色塊純度）。輸出解析度維持 4096、enhance 參數維持保守不動、SR 模型仍用 6B anime 專用版（換 23B 通用版反而會破壞動漫風）。
