@@ -200,13 +200,13 @@ sbhead-generater/
 
 ### 6.2 端到端測試
 
-- [ ] 6.2.1 單臉圖：確認 `outputs/raw/output.png` 與 `outputs/sr/output.png` 同步產生
-- [ ] 6.2.2 多臉圖：確認 N 張臉產生 N 對檔案、編號連續、raw/sr 兩邊同步
-- [ ] 6.2.3 連跑兩次：確認編號接續、不覆蓋既有檔案
-- [ ] 6.2.4 1.6x 視覺確認：對比舊版本與 1.6x 的裁切結果
-- [ ] 6.2.5 大圖（裁切 ≥ 1024）：確認 raw 與 sr 兩版內容相同（都跳過 SR）
-- [ ] 6.2.6 無臉圖：`sys.exit(1)` 行為不變
-- [ ] 6.2.7 模型 cache：多臉時確認 Real-ESRGAN 只載入一次
+- [x] 6.2.1 單臉圖：確認 `outputs/raw/output.png` 與 `outputs/sr/output.png` 同步產生
+- [x] 6.2.2 多臉圖：確認 N 張臉產生 N 對檔案、編號連續、raw/sr 兩邊同步
+- [x] 6.2.3 連跑兩次：確認編號接續、不覆蓋既有檔案
+- [x] 6.2.4 1.6x 視覺確認：對比舊版本與 1.6x 的裁切結果
+- [x] 6.2.5 大圖（裁切 ≥ 1024）：確認 raw 與 sr 兩版內容相同（都跳過 SR）
+- [x] 6.2.6 無臉圖：`sys.exit(1)` 行為不變
+- [x] 6.2.7 模型 cache：多臉時確認 Real-ESRGAN 只載入一次
 
 ### 6.3 收尾
 
@@ -238,20 +238,20 @@ sbhead-generater/
 
 - [x] 7.0.1 更新 `CLAUDE.md`：設計決策表、處理流程、模組規格
 - [x] 7.0.2 更新 `PLAN.md`：本變更紀錄與階段 7 任務清單
-- [ ] 7.0.3 更新 `README.md`：所有 1024 改為 4096、處理流程章節同步
+- [x] 7.0.3 更新 `README.md`：所有 1024 改為 4096、處理流程章節同步
 
 ### 7.1 程式碼修改
 
-- [ ] 7.1.1 `main.py`：`OUTPUT_SIZE` 1024 → 4096
-- [ ] 7.1.2 `utils/avatar_output.py`：`OUTPUT_SIZE` 1024 → 4096
-- [ ] 7.1.3 `utils/super_resolution.py`：
+- [x] 7.1.1 `main.py`：`OUTPUT_SIZE` 1024 → 4096
+- [x] 7.1.2 `utils/avatar_output.py`：`OUTPUT_SIZE` 1024 → 4096
+- [x] 7.1.3 `utils/super_resolution.py`：
   - 新增 `TARGET_SIZE = 4096`、`TILE_SAFE_THRESHOLD = 2048`、`TILE_SAFE = 2048` 常數
   - `RealESRGANer(half=False)` 永遠 fp32（不再依 CUDA 切換）
   - 改為「每次 SR pass 動態決定 tile size」：輸入邊長 ≤ TILE_SAFE_THRESHOLD 用 tile=0（不分塊），> TILE_SAFE_THRESHOLD 用 tile=TILE_SAFE（=2048）防 OOM
-    - 因 RealESRGANer 的 tile 在建構時設定，需重建（或保留 2 個 upsampler 實例輪替）；務求模型權重只載入一次
+    - 實作上以 `upsampler.tile_size = tile` 動態修改屬性，毋須重建 upsampler，模型權重只載入一次
   - `upscale_image` 改為 while 迴圈，反覆 SR 直到 min(h, w) ≥ TARGET_SIZE
   - 印出每一輪 SR 的輸入 / 輸出尺寸與本輪使用的 tile，方便 demo 觀察
-  - fallback（cv2.resize）改為一次性放大到「裁切 → 目標 ÷ 裁切」倍率
+  - fallback（cv2.resize）改為一次性放大到「目標 ÷ 短邊」倍率
 
 ### 7.2 端到端測試
 
@@ -267,7 +267,7 @@ sbhead-generater/
 
 ### 7.3 收尾
 
-- [ ] 7.3.1 `git add . && git commit && git push`
+- [x] 7.3.1 `git add . && git commit && git push`
 
 ---
 
@@ -285,3 +285,5 @@ sbhead-generater/
 - 2026-05-26｜進入 v3 改版｜使用者要求輸出解析度 1024 → 4096。原本同時想加去背功能，評估後（動漫去背需 anime 專用 ISNet 模型、檔案大小翻倍、效果視輸入而定）使用者決定不做。新增階段 7：OUTPUT_SIZE 全面 1024 → 4096、`upscale_image` 改為 while 迴圈反覆 SR 直到 ≥ 4096、raw 也拉到 4096 以凸顯 SR 優勢。
 - 2026-05-26｜v3 規格追加（GPU 升級）｜使用者本機從 RTX 4060 8GB 升級至 RTX 3090 24GB，連帶調整最高品質設定：`tile=400` → `tile=1024`（消除 4096 大圖的 tile 拼接縫）、`half=True (fp16)` → `half=False (fp32)`（提升動漫平塗區色塊純度）。輸出解析度維持 4096、enhance 參數維持保守不動、SR 模型仍用 6B anime 專用版（換 23B 通用版反而會破壞動漫風）。
 - 2026-05-26｜v3 規格再追加（tile=0）｜使用者要求 tile 改為 0（不分塊，零拼接縫）。經估算：小裁切連跑 2 次 SR 的第 2 次（輸入可達 3200+）+ fp32 + tile=0 預估 25–35GB VRAM、會 OOM。決議：每次 SR pass 前動態決定 tile size，**輸入 ≤ 2048 用 tile=0、> 2048 用 tile=2048**。實務上 4096 大圖只切 4 塊、拼接縫肉眼幾乎無感。Enhance amount 維持 0.3（評估後使用者選擇不加重，避免 SR 後出現 halo）。
+- 2026-05-26｜v3 程式碼完成｜階段 7.1 三支程式碼修改完成並 push（commit `b0d5afa`）：`main.py` 與 `utils/avatar_output.py` 的 `OUTPUT_SIZE` 1024 → 4096、`utils/super_resolution.py` 新增 while 迴圈 + 動態 tile 機制（以 `upsampler.tile_size = tile` 動態修改屬性、模型只載入一次）+ fp32 固定。stage 7.2 端到端測試由使用者本機驗證中。
+- 2026-05-26｜MD 一致性整理｜CLAUDE.md `save_paired_avatar` 規格描述修正 1024×1024 → 4096×4096（舊版遺漏未改）；README.md 注意 3 措辭調整（移除已不存在的「1024 版本」對照）；PLAN.md 階段 6.2 全數標 [x]（v2 測試使用者已驗證通過）、階段 7.0.3、7.1.x、7.3.1 標 [x] 反映實際進度。歷史性的任務描述（階段 2 的 `save_avatar`、階段 6 的 `detect_largest_face`）刻意保留以呈現演進軌跡，由 Changelog 明確標示時間線。

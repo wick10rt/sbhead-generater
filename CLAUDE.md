@@ -145,7 +145,7 @@ for i in range(N):                ← 對每張臉跑同樣流程
   - 同時掃描 `outputs_dir/raw/` 與 `outputs_dir/sr/`，回傳兩邊現有最大編號 + 1 作為本次執行的起始 index
   - `output.png` 視為 index 0，`output(N).png` 視為 index N
 - 函式 2：`save_paired_avatar(raw_image, sr_image, outputs_dir: Path, index: int) -> tuple[Path, Path]`
-  - 把 raw 與 sr 兩張圖各 resize 到 1024×1024，存到 `outputs_dir/raw/` 與 `outputs_dir/sr/` 同名檔案
+  - 把 raw 與 sr 兩張圖各 resize 到 4096×4096，存到 `outputs_dir/raw/` 與 `outputs_dir/sr/` 同名檔案
   - 命名：index=0 → `output.png`、index=N → `output(N).png`
   - 自動建立 `raw/` 與 `sr/` 子資料夾
 

@@ -169,7 +169,7 @@ python main.py -i sample_images/kasumi.jpg
 >
 > **注意 2**：4096×4096 PNG 單檔約 5–20 MB，多臉合照單次執行可能輸出 50–200 MB。請留意磁碟空間。
 >
-> **注意 3**：裁切小於 1024 的圖會需要連續執行兩次 Real-ESRGAN，耗時與 VRAM 用量會比 1024 版本明顯增加；若 VRAM 不足會自動 fallback 到傳統 resize 並印警告。
+> **注意 3**：裁切小於 1024 的圖會需要連續執行兩次 Real-ESRGAN（800 → 3200 → 12800 後 resize 到 4096），耗時與 VRAM 用量會比裁切較大的情況明顯增加；若 VRAM 不足會自動 fallback 到傳統 resize 並印警告。
 
 ---
 
