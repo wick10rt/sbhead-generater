@@ -1,10 +1,9 @@
 """動漫角色臉部偵測模組。
 
 使用 dghs-imgutils 偵測圖片中所有動漫角色臉部，回傳所有 bbox 列表
-（按偵測器原順序）。若沒有偵測到任何臉部，直接 sys.exit(1) 終止程式。
+（按偵測器原順序）。未偵測到臉部時回傳空 list，由呼叫端決定如何處理。
 """
 from __future__ import annotations
-import sys
 import numpy as np
 from PIL import Image
 from imgutils.detect import detect_faces
@@ -20,10 +19,7 @@ def detect_all_faces(
 
     Returns:
         所有臉部 bbox 列表 [(x0, y0, x1, y1), ...]，順序依 dghs-imgutils
-        偵測器原順序，皆為 int。
-
-    Notes:
-        若未偵測到任何臉部，會印出錯誤訊息並 sys.exit(1)，不會回傳。
+        偵測器原順序，皆為 int。未偵測到任何臉部時回傳空 list。
     """
     # dghs-imgutils 0.19+ 的 detect_faces 不接受 ndarray，
     # 只認 PIL.Image / 檔案路徑 / BinaryIO，所以先轉 PIL.Image。
@@ -31,13 +27,6 @@ def detect_all_faces(
 
     # detect_faces 回傳 list，元素為 ((x0, y0, x1, y1), label, score)
     detections = detect_faces(pil_image)
-
-    if not detections:
-        print(
-            "錯誤：圖片中未偵測到任何動漫角色臉部，無法生成大頭貼。",
-            file=sys.stderr,
-        )
-        sys.exit(1)
 
     return [
         (int(x0), int(y0), int(x1), int(y1))
