@@ -57,5 +57,4 @@ if __name__ == "__main__":
     bboxes = detect_all_faces(img)
     print(f"偵測到 {len(bboxes)} 張臉")
     for i, (x0, y0, x1, y1) in enumerate(bboxes, start=1):
-        print(f"  第 {i} 張：bbox=({x0}, {y0}, {x1}, {y1})，"
-              f"尺寸={x1 - x0}×{y1 - y0}")
+        print(f"第 {i} 張：bbox=({x0}, {y0}, {x1}, {y1})，尺寸={x1 - x0}×{y1 - y0}")

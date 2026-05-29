@@ -1,12 +1,8 @@
 """大頭貼輸出模組（raw / sr 雙版本同步）。
 
-每張臉同時輸出兩個 4096×4096 PNG 版本：
-- `outputs_dir/raw/output(N).png`：未做超解析度的版本
-- `outputs_dir/sr/output(N).png`：做完超解析度的版本
-
-兩個子資料夾用同一個編號，方便對比 AI 上採前後的畫質差異。
-命名規則：index=0 → `output.png`、index=N → `output(N).png`。
-編號採「raw/ 與 sr/ 兩邊現有最大編號 + 1」，不填補編號空缺。
+每張臉輸出兩個 4096×4096 PNG：raw/（未做 SR）與 sr/（做完 SR），
+兩邊用同一編號方便對比。命名 index=0 → output.png、index=N → output(N).png，
+編號取兩邊現有最大值 + 1，不填補空缺。
 """
 from __future__ import annotations
 import re
@@ -19,7 +15,6 @@ OUTPUT_SIZE = 4096
 RAW_SUBDIR = "raw"
 SR_SUBDIR = "sr"
 
-# 比對 output.png 或 output(N).png
 _FILENAME_PATTERN = re.compile(r"^output(?:\((\d+)\))?\.png$")
 
 
@@ -31,10 +26,7 @@ def _index_to_filename(index: int) -> str:
 
 
 def _max_index_in_dir(folder: Path) -> int:
-    """掃描資料夾，回傳現有最大編號。沒有任何符合檔案則回傳 -1。
-
-    output.png 視為編號 0；output(N).png 視為編號 N。
-    """
+    """回傳資料夾內現有最大編號（output.png 視為 0），無符合檔案回傳 -1。"""
     if not folder.exists():
         return -1
 
@@ -50,17 +42,7 @@ def _max_index_in_dir(folder: Path) -> int:
 
 
 def next_paired_index(outputs_dir: Path) -> int:
-    """同時掃 raw/ 與 sr/，回傳本次執行可用的起始 index。
-
-    取兩邊最大編號 + 1，確保 raw 與 sr 編號永遠同步、不會覆寫舊檔。
-    若兩邊都沒有任何 output*.png，回傳 0（也就是 output.png）。
-
-    Args:
-        outputs_dir: 輸出根資料夾（含 raw/ 與 sr/）。
-
-    Returns:
-        下一張臉應使用的 index。
-    """
+    """同時掃 raw/ 與 sr/，回傳兩邊最大編號 + 1；都空則回傳 0。"""
     raw_dir = outputs_dir / RAW_SUBDIR
     sr_dir = outputs_dir / SR_SUBDIR
     max_num = max(_max_index_in_dir(raw_dir), _max_index_in_dir(sr_dir))
@@ -68,10 +50,7 @@ def next_paired_index(outputs_dir: Path) -> int:
 
 
 def _resize_to_output(image: np.ndarray) -> np.ndarray:
-    """將圖片 resize 到 OUTPUT_SIZE × OUTPUT_SIZE。
-
-    縮小用 INTER_AREA、放大用 INTER_CUBIC；已是目標尺寸則直接回傳。
-    """
+    """resize 到 OUTPUT_SIZE×OUTPUT_SIZE，縮小用 INTER_AREA、放大用 INTER_CUBIC。"""
     if image.shape[:2] == (OUTPUT_SIZE, OUTPUT_SIZE):
         return image
     h, w = image.shape[:2]
@@ -85,21 +64,9 @@ def save_paired_avatar(
     outputs_dir: Path,
     index: int,
 ) -> tuple[Path, Path]:
-    """同時將 raw 與 sr 兩張圖輸出為 4096×4096 PNG。
+    """將 raw 與 sr 兩張圖以同一編號輸出為 4096×4096 PNG，回傳兩個路徑。
 
-    raw 寫到 `outputs_dir/raw/`、sr 寫到 `outputs_dir/sr/`，
-    兩邊使用同一個 index 對應的檔名（保證對比時編號一致）。
-
-    使用 PIL 寫檔，避免 cv2.imwrite 在 Windows 中文路徑下失敗。
-
-    Args:
-        raw_image: 未做 SR 的 RGB 圖片。
-        sr_image: 做完 SR 的 RGB 圖片（若裁切 ≥ 4096 可能與 raw 相同）。
-        outputs_dir: 輸出根資料夾（會自動建立 raw/ 與 sr/）。
-        index: 本張臉的編號（由 next_paired_index 取得後逐張 +1）。
-
-    Returns:
-        (raw_path, sr_path)：實際輸出的兩個檔案路徑。
+    用 PIL 寫檔，避免 cv2.imwrite 在 Windows 中文路徑下失敗。
     """
     raw_dir = outputs_dir / RAW_SUBDIR
     sr_dir = outputs_dir / SR_SUBDIR
@@ -116,9 +83,7 @@ def save_paired_avatar(
 
 
 if __name__ == "__main__":
-    # 測試 raw/sr 同步編號邏輯
     test_dir = Path(__file__).parent.parent / "outputs" / "_test_paired_naming"
-    # 清空測試資料夾
     if test_dir.exists():
         for sub in (test_dir / RAW_SUBDIR, test_dir / SR_SUBDIR):
             if sub.exists():
@@ -130,7 +95,6 @@ if __name__ == "__main__":
     fake_raw = np.zeros((512, 512, 3), dtype=np.uint8)
     fake_sr = np.full((2048, 2048, 3), 200, dtype=np.uint8)
 
-    # 模擬連跑三張臉
     results = []
     for _ in range(3):
         idx = next_paired_index(test_dir)
@@ -139,13 +103,13 @@ if __name__ == "__main__":
 
     print("連續輸出三張臉的檔名測試：")
     for i, (r, s) in enumerate(results, start=1):
-        print(f"  第 {i} 張：raw={r} / sr={s}")
+        print(f"第 {i} 張：raw={r} / sr={s}")
 
     expected = [
         ("output.png", "output.png"),
         ("output(1).png", "output(1).png"),
         ("output(2).png", "output(2).png"),
     ]
-    print(f"\n預期：{expected}")
+    print(f"預期：{expected}")
     print(f"實際：{results}")
     print(f"結果：{'通過' if results == expected else '失敗'}")
