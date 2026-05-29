@@ -1,16 +1,8 @@
-"""Real-ESRGAN 超解析度模組。
+"""Real-ESRGAN 超解析度模組（RealESRGAN_x4plus_anime_6B）。
 
-使用 RealESRGAN_x4plus_anime_6B 模型對動漫圖片做超解析度放大。
-x4plus 一次只能放大 4 倍，為達到目標尺寸（4096）會以 while 迴圈反覆執行
-直到短邊 ≥ TARGET_SIZE 才回傳。
-
-VRAM 管理策略（3090 24GB）：
-- fp16（half=True）：VRAM 砍半，動漫圖品質影響極小
-- tile=TILE_SIZE（固定 1024）分塊推論：避免整圖一次前向吃爆 VRAM
-- 每輪 SR 結束呼叫 torch.cuda.empty_cache()：
-  防止 caching allocator 累積記憶體（pass #2 殘留 → pass #3 可用空間不足）
-
-模型載入失敗或推論失敗時，自動 fallback 到 cv2.resize（INTER_CUBIC）並印警告。
+x4plus 一次放大 4 倍，以 while 迴圈反覆執行直到短邊 ≥ TARGET_SIZE。
+VRAM 管理（3090 24GB）：fp16 + 固定 tile=1024 + 每輪後 empty_cache，
+避免 caching allocator 累積殘留導致後輪 OOM。失敗時 fallback cv2.resize。
 """
 from __future__ import annotations
 import sys
@@ -19,31 +11,19 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-# === Real-ESRGAN 設定 ===
-# 權重檔路徑（相對 main.py 同層的 weights/）
 _THIS_DIR = Path(__file__).parent
 WEIGHTS_PATH = _THIS_DIR.parent / "weights" / "RealESRGAN_x4plus_anime_6B.pth"
 
-# 模型固定 ×4 倍率
 SR_SCALE = 4
-
-# 目標輸出短邊（while 迴圈停止條件）
 TARGET_SIZE = 4096
-
-# 固定 tile 大小：1024 在 fp16 下每塊約 1 GB，安全不 OOM
 TILE_SIZE = 1024
 TILE_PAD = 10
 
-# 模型物件 cache（首次推論時載入，後續多張臉共用）
 _upsampler = None
 
 
 def _load_model():
-    """延遲載入 Real-ESRGAN 模型並 cache。
-
-    Raises:
-        FileNotFoundError: 找不到權重檔。
-    """
+    """延遲載入 Real-ESRGAN 模型並 cache，後續多張臉共用。"""
     global _upsampler
     if _upsampler is not None:
         return _upsampler
@@ -62,12 +42,12 @@ def _load_model():
         from basicsr.archs.rrdbnet_arch import RRDBNet
         from realesrgan import RealESRGANer
 
-        # RealESRGAN_x4plus_anime_6B 的固定架構參數
+        # 6B = 6 個 residual blocks，其餘為 x4plus_anime_6B 固定架構參數
         model = RRDBNet(
             num_in_ch=3,
             num_out_ch=3,
             num_feat=64,
-            num_block=6,         # 6B = 6 個 residual blocks
+            num_block=6,
             num_grow_ch=32,
             scale=SR_SCALE,
         )
@@ -80,7 +60,7 @@ def _load_model():
             tile=TILE_SIZE,
             tile_pad=TILE_PAD,
             pre_pad=0,
-            half=True,             # fp16：VRAM 砍半，動漫圖品質影響極小
+            half=True,
             gpu_id=0 if use_cuda else None,
         )
 
@@ -88,48 +68,28 @@ def _load_model():
 
 
 def upscale_image(image: np.ndarray) -> np.ndarray:
-    """使用 Real-ESRGAN 將 RGB 圖片放大至短邊 ≥ TARGET_SIZE。
+    """用 Real-ESRGAN 將 RGB 圖片放大至短邊 ≥ TARGET_SIZE。
 
-    x4plus 每次 ×4，內部 while 迴圈反覆執行直到短邊 ≥ TARGET_SIZE 才回傳。
-    每輪 SR 結束呼叫 torch.cuda.empty_cache() 釋放 caching allocator 殘留記憶體，
-    防止多輪 SR 累積導致後輪 OOM（167→668→2672 場景已驗證）。
-
-    若 SR 失敗（權重缺、CUDA OOM 等），自動 fallback 到 cv2.resize 並印警告，
-    fallback 一次性放大到「短邊 ≥ TARGET_SIZE」所需倍率。
-
-    Args:
-        image: RGB 格式 numpy 陣列，形狀 (H, W, 3)。
-
-    Returns:
-        RGB 圖片，短邊 ≥ TARGET_SIZE。後續由 avatar_output 統一 resize 為
-        TARGET_SIZE × TARGET_SIZE 輸出。
+    失敗時 fallback cv2.resize（INTER_CUBIC）一次性放大到所需倍率並印警告。
     """
     try:
         import torch
         upsampler = _load_model()
-        # RealESRGANer.enhance 內部以 BGR 處理（與 cv2 慣例一致）
         bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
         pass_index = 0
         while min(bgr.shape[:2]) < TARGET_SIZE:
             pass_index += 1
             in_h, in_w = bgr.shape[:2]
-            upsampler.tile_size = TILE_SIZE  # 確保每輪都是固定 tile
-
-            print(
-                f"        SR pass #{pass_index}：輸入 {in_w}×{in_h}、tile={TILE_SIZE}",
-                flush=True,
-            )
+            upsampler.tile_size = TILE_SIZE
+            print(f"SR pass #{pass_index} 輸入 {in_w}×{in_h}、tile={TILE_SIZE}", flush=True)
 
             bgr, _ = upsampler.enhance(bgr, outscale=SR_SCALE)
 
             out_h, out_w = bgr.shape[:2]
-            print(
-                f"        SR pass #{pass_index}：輸出 {out_w}×{out_h}",
-                flush=True,
-            )
+            print(f"SR pass #{pass_index} 輸出 {out_w}×{out_h}", flush=True)
 
-            # 釋放 caching allocator 殘留，避免多輪 SR 累積記憶體導致後輪 OOM
+            # 釋放 caching allocator 殘留，避免多輪累積導致後輪 OOM
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
@@ -137,8 +97,7 @@ def upscale_image(image: np.ndarray) -> np.ndarray:
 
     except Exception as exc:
         print(
-            f"警告：Real-ESRGAN 執行失敗（{exc}）\n"
-            f"      改用 cv2.resize（INTER_CUBIC）一次性放大至短邊 ≥ {TARGET_SIZE}。",
+            f"警告：Real-ESRGAN 執行失敗（{exc}），改用 cv2.resize 放大至短邊 ≥ {TARGET_SIZE}。",
             file=sys.stderr,
         )
         h, w = image.shape[:2]
@@ -165,12 +124,11 @@ if __name__ == "__main__":
     test_path = images[0]
     img = np.array(Image.open(test_path).convert("RGB"))
 
-    # 縮成 800×800 模擬「裁切後 < 4096」的情境，會跑 2 次 SR
-    # （800 → 3200 → 12800），tile=1024、fp16、each pass empty_cache
+    # 縮成 800×800 模擬裁切後 < 4096，會跑 2 次 SR（800 → 3200 → 12800）
     small = cv2.resize(img, (800, 800), interpolation=cv2.INTER_AREA)
     print(f"輸入（縮小後）：{small.shape}")
-    print(f"目標短邊：≥ {TARGET_SIZE}")
-    print("執行 Real-ESRGAN（首次可能要載入模型，請稍候）...")
+    print(f"目標短邊 ≥ {TARGET_SIZE}")
+    print("執行 Real-ESRGAN，首次需載入模型請稍候")
     upscaled = upscale_image(small)
     print(f"放大後：{upscaled.shape}")
 
