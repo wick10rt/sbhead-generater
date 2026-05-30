@@ -11,16 +11,16 @@
 | 項目 | 決定 |
 |------|------|
 | 介面 | `python main.py -i <圖片路徑>`，無其他 flag |
-| 輸出位置 | `main.py` 同層 `outputs/raw/`、`outputs/sr/`、`outputs/2048out/` 三個子資料夾，自動建立 |
-| 輸出格式 | raw / sr 固定 PNG 4096×4096；2048out 固定 PNG 2048×2048（由 sr 4096 INTER_AREA 縮小，抗鋸齒） |
-| 輸出命名 | `output.png`、`output(1).png`、`output(2).png`…，raw/、sr/、2048out/ 三邊編號同步 |
+| 輸出位置 | `main.py` 同層 `outputs/raw/` 與 `outputs/sr/` 兩個子資料夾，自動建立 |
+| 輸出格式 | raw / sr 皆固定 PNG 2048×2048（sr 版由超採樣 4096 以 INTER_AREA 縮小，抗鋸齒） |
+| 輸出命名 | `output.png`、`output(1).png`、`output(2).png`…，raw/、sr/ 兩邊編號同步 |
 | 輸入格式 | JPG / JPEG / PNG |
 | 臉部偵測 | dghs-imgutils（不裝 [gpu]，onnxruntime-gpu 為 CUDA 專用、AMD 不相容；偵測走 CPU） |
 | 多臉策略 | 偵測到的所有臉部全部處理（按偵測器原順序），單張失敗印警告後跳過、繼續其他臉 |
 | 偵測失敗 | 無臉時 `sys.exit(1)` + 清楚錯誤訊息，不輸出任何檔案 |
 | 裁切外擴倍率 | EXPAND_RATIO=1.6（bbox 寬高最大邊 ×1.6），EXTRA_TOP_RATIO=0.15 |
 | Enhance | 永遠自動執行（銳化 + 降噪；CLAHE 對比已移除），raw 與 sr 兩版都套 |
-| 雙版本輸出 | 每張臉同時輸出 raw 版（不跑 SR）與 sr 版（跑 SR）以便比對；兩版都 4096×4096 |
+| 雙版本輸出 | 每張臉同時輸出 raw 版（不跑 SR）與 sr 版（跑 SR）以便比對；兩版都 2048×2048（sr 由超採樣 4096 縮小） |
 | SR 條件 | 裁切後尺寸 < 4096 → sr 版**連續跑 Real-ESRGAN 直到 ≥ 4096**；≥ 4096 → sr 版與 raw 版內容相同（都直接 resize） |
 | SR 模型 | `RealESRGAN_x4plus_anime_6B.pth`，放 `weights/`；tile=512 固定分塊（AMD 8~12GB）；fp16（VRAM 砍半）；每輪 SR 後 `torch.cuda.empty_cache()` 防後輪 OOM |
 | 路徑處理 | pathlib + PIL |
@@ -59,9 +59,8 @@ sbhead-generater/
 │   └── RealESRGAN_x4plus_anime_6B.pth  ← gitignored，需自行下載
 ├── sample_images/                        ← gitignored，放測試圖
 └── outputs/                              ← gitignored，main.py 自動建立
-    ├── raw/                              # 未做 SR 的版本（4096）
-    ├── sr/                               # 做完 SR 的版本（4096，檔名與 raw/ 同步）
-    └── 2048out/                          # 最終成品（2048，由 sr 縮小，同步）
+    ├── raw/                              # 未做 SR 的版本（2048）
+    └── sr/                               # 做完 SR 的版本（2048，由超採樣 4096 縮小，檔名與 raw/ 同步）
 ```
 
 ---
@@ -325,6 +324,7 @@ sbhead-generater/
 - 2026-05-26｜SR 軟化實驗（raw × α 混合）→ 已 revert｜使用者反映 sr 4096「黑線粗黑、飽和度偏高」，diagnose 為 x4plus_anime_6B GAN baseline 偏好。嘗試在 `save_paired_avatar` 寫檔前以 `SR_BLEND_ALPHA = 0.35` 把 raw 4096 線性混入 sr。實測結果三大問題：(1) 軟過頭、SR 細節被稀釋；(2) raw 本身是 enhance + 傳統 resize、本來就糊，混進去拖累 sr；(3) sr 太像 raw、失去「raw vs sr 對照」的設計使命。冷靜回頭看原 sr 的硬感其實可接受 → 直接 revert 此次 commit，sr 保留純 Real-ESRGAN 輸出。**未來教訓**：要修「SR 硬感」不能用「混回低品質的 raw」這招（兩個版本品質差太多），若日後仍要動，應從「SR 後做 bilateral filter 保邊降噪」或「換 denoise_strength 可調的模型」方向著手，而非加權平均。
 - 2026-05-26｜文件同步至最終版｜將所有文件對齊目前實作（commit `c03d8d4`）：PLAN.md 階段 7.1.3 任務描述改寫為「TILE_SIZE=1024 + fp16 + empty_cache」現況（移除已不適用的「動態 tile size」敘述）；README.md 注意 3 補充 SR pass 次數（小裁切 2–3 次）與目前的 VRAM 管理策略（tile=1024 + fp16 + 每輪 empty_cache）。CLAUDE.md 設計決策表、模組規格與處理流程已隨各次 commit 同步。Changelog 完整保留 v3 全部演進歷程（tile=400→tile=0→tile=2048→tile=1024、fp32→fp16、SR 軟化實驗→revert）作為設計演進軌跡。
 - 2026-05-30｜AMD GPU 版分支（階段 8）｜在 `claude/amd-gpu-version-bvqzE` 分支建立 AMD GPU + Linux + ROCm 6.2 版本（目標 7800XT / 6700XT 等 8~12GB）。ROCm 下 PyTorch `torch.cuda.*` 經 HIP 對應 AMD GPU，核心邏輯幾乎不變。變更：PyTorch 改 ROCm wheel 安裝、`requirements.txt` 移除 torch/torchvision 釘版且 `dghs-imgutils` 去 `[gpu]`（偵測走 CPU）、SR `TILE_SIZE` 1024 → 512（適配中階卡）、`super_resolution.py` 加 ROCm/HIP 後端偵測提示、README 改 Linux 路徑與 HIP 驗證並加 `HSA_OVERRIDE_GFX_VERSION` 註解。設計決策表平台改 Linux+AMD ROCm。歷史 v3 任務描述與 Changelog 保留不動，AMD 變動以階段 8 獨立記錄。端到端測試待使用者本機 AMD 卡驗證。
+- 2026-05-30｜raw/sr 改回都輸出 2048、移除 2048out/｜使用者最終決定 raw 與 sr 都輸出 2048。由於 2048out（sr 縮 2048）會與 sr/ 完全重複，故刪除該資料夾，回到 raw/ + sr/ 兩資料夾。sr 版仍保留「先超採樣到 ≥4096 再 INTER_AREA 縮小到 2048」以保畫質/抗鋸齒。avatar_output：`OUTPUT_SIZE` 改回 2048、移除 `FINAL_SIZE`/`FINAL_SUBDIR`；`save_paired_avatar` 回 2-tuple、raw/sr 各縮 2048；`next_paired_index` 改回掃兩邊。main.py：呼叫端解包 2-tuple、移除 2048out 輸出列印。同步 CLAUDE.md / PLAN.md / README.md。
 - 2026-05-30｜恢復 raw/sr 4096 + 新增 2048out/ 最終成品｜使用者偏好 raw 與 sr 維持 4096，另開第三個資料夾 `2048out/` 專放最終 2048 成品（由 sr 版縮）。avatar_output：`OUTPUT_SIZE` 改回 4096、新增 `FINAL_SIZE=2048` 與 `FINAL_SUBDIR="2048out"`；`_resize_to_output` 泛化為 `_resize_to(image, size)`；`save_paired_avatar` 回傳改 3-tuple（raw_path, sr_path, final_path），raw/sr 各存 4096、2048out 由 sr 4096 以 INTER_AREA 縮小；`next_paired_index` 改掃三邊取最大。main.py：移除 `OUTPUT_SIZE` 常數、兩處呼叫端解包 3-tuple 並印出 2048out 路徑。.gitignore 的 `outputs/*` 已涵蓋新資料夾。同步 CLAUDE.md / PLAN.md / README.md。
 - 2026-05-30｜（前一輪，已被上一條取代）輸出尺寸 4096 → 2048（超採樣）｜使用者要求最終輸出改 2048。採「SR 到 4096 再縮 2048」超採樣方案：`OUTPUT_SIZE`（main.py / avatar_output.py）改 2048，SR `TARGET_SIZE` 維持 4096；main.py 的 SR 觸發條件改用 `super_resolution.TARGET_SIZE`（4096）而非 `OUTPUT_SIZE`，把「SR 目標」與「最終輸出」兩個概念解耦。sr 版先 Real-ESRGAN 超採樣到 ≥4096，再由 avatar_output 以 INTER_AREA 縮小到 2048——縮小本身即天然抗鋸齒，順帶緩解線條鋸齒。同步 CLAUDE.md / PLAN.md / README.md（最終輸出尺寸字樣改 2048；SR 目標/觸發的 4096 字樣保留）。
 - 2026-05-30｜移除 enhance 的 CLAHE｜使用者在 6800XT 實跑後反映「人物臉頰會黑黑的、塊狀髒污」。二分定位（raw 版也髒 → 非 SR）確認兇手是 `enhance.py` 的 CLAHE 局部對比度均衡：動漫圖本身高對比平塗，CLAHE 以 8×8 網格逐塊拉對比，在臉頰柔和腮紅漸層上把中心壓暗成塊。移除 CLAHE（含 `CLAHE_CLIP_LIMIT`、`CLAHE_TILE_SIZE` 常數與 LAB 轉換），enhance 僅保留 bilateral 降噪 + unsharp 銳化。同步更新 CLAUDE.md / PLAN.md / README.md / main.py 進度訊息。
