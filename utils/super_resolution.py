@@ -1,12 +1,3 @@
-"""Real-ESRGAN 超解析度模組（RealESRGAN_x4plus_anime_6B）— AMD ROCm 版。
-
-x4plus 一次放大 4 倍，以 while 迴圈反覆執行直到短邊 ≥ TARGET_SIZE。
-ROCm 下 PyTorch 的 torch.cuda.* API（is_available / half / empty_cache）
-會透過 HIP 對應到 AMD GPU，因此程式碼與 CUDA 版幾乎相同。
-VRAM 管理（AMD 8~12GB，如 7800XT / 6700XT）：fp16 + 固定 tile=512 +
-每輪後 empty_cache，避免 caching allocator 累積殘留導致後輪 OOM。
-失敗時 fallback cv2.resize。
-"""
 from __future__ import annotations
 import sys
 import warnings
@@ -19,8 +10,7 @@ WEIGHTS_PATH = _THIS_DIR.parent / "weights" / "RealESRGAN_x4plus_anime_6B.pth"
 
 SR_SCALE = 4
 TARGET_SIZE = 4096
-# AMD 8~12GB 顯卡：tile 固定 512（24GB 才適合 1024，12GB 用 1024 會 OOM）。
-# fp16 下每塊約 0.25~0.5GB，512 在中階卡上安全。
+# 512：AMD 8~12GB 安全分塊（1024 易 OOM）
 TILE_SIZE = 512
 TILE_PAD = 10
 
@@ -28,7 +18,6 @@ _upsampler = None
 
 
 def _load_model():
-    """延遲載入 Real-ESRGAN 模型並 cache，後續多張臉共用。"""
     global _upsampler
     if _upsampler is not None:
         return _upsampler
@@ -46,7 +35,7 @@ def _load_model():
         from basicsr.archs.rrdbnet_arch import RRDBNet
         from realesrgan import RealESRGANer
 
-        # 6B = 6 個 residual blocks，其餘為 x4plus_anime_6B 固定架構參數
+        # 6B：num_block=6（x4plus_anime_6B 固定架構）
         model = RRDBNet(
             num_in_ch=3,
             num_out_ch=3,
@@ -79,10 +68,6 @@ def _load_model():
 
 
 def upscale_image(image: np.ndarray) -> np.ndarray:
-    """用 Real-ESRGAN 將 RGB 圖片放大至短邊 ≥ TARGET_SIZE。
-
-    失敗時 fallback cv2.resize（INTER_CUBIC）一次性放大到所需倍率並印警告。
-    """
     try:
         import torch
         upsampler = _load_model()

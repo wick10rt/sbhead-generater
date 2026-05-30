@@ -1,9 +1,3 @@
-"""sbhead-generater 主程式：Bang Dream 角色大頭貼自動生成系統。
-
-執行方式：
-    python main.py -i <圖片路徑>    # 單圖
-    python main.py -i <資料夾路徑>  # 批次（遞迴掃描 JPG/JPEG/PNG）
-"""
 from __future__ import annotations
 import argparse
 import sys
@@ -27,7 +21,6 @@ OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 
 
 def parse_args() -> argparse.Namespace:
-    """解析命令列參數，只接受 -i / --input。"""
     parser = argparse.ArgumentParser(
         prog="sbhead-generater",
         description="Bang Dream 角色大頭貼自動生成系統",
@@ -42,7 +35,6 @@ def parse_args() -> argparse.Namespace:
 
 
 def validate_input(input_path: Path) -> None:
-    """驗證輸入路徑存在；單檔則一併檢查格式，失敗時 sys.exit(1)。"""
     if not input_path.exists():
         print(f"錯誤：找不到路徑 {input_path}", file=sys.stderr)
         sys.exit(1)
@@ -55,7 +47,6 @@ def validate_input(input_path: Path) -> None:
 
 
 def collect_images(directory: Path) -> list[Path]:
-    """遞迴掃描資料夾，回傳所有支援格式圖片路徑（字母排序）。"""
     return sorted(
         p for p in directory.rglob("*")
         if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS
@@ -66,12 +57,6 @@ def process_single_face(
     image: np.ndarray,
     bbox: tuple[int, int, int, int],
 ) -> tuple[np.ndarray, np.ndarray]:
-    """處理單一張臉，回傳 (raw_image, sr_image)，皆尚未 resize 到輸出尺寸。
-
-    raw 版只做裁切 + enhance；sr 版在裁切尺寸 < SR 目標（4096）時連續跑
-    Real-ESRGAN 超採樣。最終輸出尺寸（raw/sr 皆 2048，sr 由超採樣 4096
-    縮小）由 avatar_output.save_paired_avatar 統一處理。
-    """
     cropped = crop_by_bbox(image, bbox)
     crop_size = cropped.shape[0]
     print(f"裁切完成，尺寸 {crop_size}×{crop_size}")
@@ -92,7 +77,6 @@ def process_single_face(
 
 
 def run_single(input_path: Path) -> None:
-    """單圖模式：無臉時 sys.exit(1)。"""
     print(f"輸入圖片：{input_path}")
 
     image = np.array(Image.open(input_path).convert("RGB"))
@@ -136,7 +120,6 @@ def run_single(input_path: Path) -> None:
 
 
 def run_batch(image_paths: list[Path]) -> None:
-    """批次模式：依序處理多張圖，無臉或讀取失敗時警告 + 跳過。"""
     total_images = len(image_paths)
     print(f"批次模式，共找到 {total_images} 張圖片")
 

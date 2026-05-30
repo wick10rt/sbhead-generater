@@ -1,8 +1,3 @@
-"""依臉部 bbox 裁切大頭貼區域。
-
-以 bbox 較長邊 × EXPAND_RATIO 為正方形邊長，中心向上偏移 EXTRA_TOP_RATIO
-以包含更多頭髮；超出邊界時先平移、無法保持尺寸再縮小。
-"""
 from __future__ import annotations
 import numpy as np
 
@@ -14,7 +9,6 @@ def crop_by_bbox(
     image: np.ndarray,
     bbox: tuple[int, int, int, int],
 ) -> np.ndarray:
-    """依臉部 bbox 擴展裁切出正方形大頭貼區域。"""
     h, w = image.shape[:2]
     x0, y0, x1, y1 = bbox
 

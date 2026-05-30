@@ -1,12 +1,3 @@
-"""動漫角色臉部偵測模組。
-
-使用 dghs-imgutils 偵測圖片中所有動漫角色臉部，回傳所有 bbox 列表
-（按偵測器原順序）。未偵測到臉部時回傳空 list，由呼叫端決定如何處理。
-
-後端說明（AMD ROCm 版）：本專案不安裝 dghs-imgutils[gpu]（onnxruntime-gpu
-為 CUDA 專用，AMD 不相容），偵測走 CPU onnxruntime。臉部偵測負載很輕，
-CPU 即可；GPU 算力保留給 Real-ESRGAN 超解析度。
-"""
 from __future__ import annotations
 import numpy as np
 from PIL import Image
@@ -16,15 +7,6 @@ from imgutils.detect import detect_faces
 def detect_all_faces(
     image: np.ndarray,
 ) -> list[tuple[int, int, int, int]]:
-    """偵測 RGB 圖片中所有動漫臉部，回傳所有 bbox 列表。
-
-    Args:
-        image: RGB 格式 numpy 陣列，形狀為 (H, W, 3)。
-
-    Returns:
-        所有臉部 bbox 列表 [(x0, y0, x1, y1), ...]，順序依 dghs-imgutils
-        偵測器原順序，皆為 int。未偵測到任何臉部時回傳空 list。
-    """
     pil_image = Image.fromarray(image) if isinstance(image, np.ndarray) else image
 
     detections = detect_faces(pil_image)
