@@ -1,9 +1,13 @@
+# 注意：torch / torchvision 不在此檔安裝。
+# AMD ROCm 版 PyTorch 需用 ROCm 專用 wheel，請依 README「步驟 1」用
+# --index-url https://download.pytorch.org/whl/rocm6.2 另行安裝，
+# 切勿用 PyPI 預設版（那是 CUDA build，AMD 顯卡不能用）。
 opencv-python>=4.8.0,<5.0.0
 Pillow>=10.0.0,<11.0.0
 numpy>=1.24.0,<2.0.0
-torch>=2.0.0,<2.3.0
-torchvision>=0.15.0,<0.18.0
 realesrgan>=0.3.0
 basicsr>=1.4.2
-dghs-imgutils[gpu]
+# dghs-imgutils 不裝 [gpu] extra：該 extra 會拉 onnxruntime-gpu（CUDA/TensorRT 專用，
+# AMD 不相容）。臉部偵測走 CPU onnxruntime 即可，負載很輕。
+dghs-imgutils
 tqdm>=4.65.0

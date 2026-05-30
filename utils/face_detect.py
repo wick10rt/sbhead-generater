@@ -2,6 +2,10 @@
 
 使用 dghs-imgutils 偵測圖片中所有動漫角色臉部，回傳所有 bbox 列表
 （按偵測器原順序）。未偵測到臉部時回傳空 list，由呼叫端決定如何處理。
+
+後端說明（AMD ROCm 版）：本專案不安裝 dghs-imgutils[gpu]（onnxruntime-gpu
+為 CUDA 專用，AMD 不相容），偵測走 CPU onnxruntime。臉部偵測負載很輕，
+CPU 即可；GPU 算力保留給 Real-ESRGAN 超解析度。
 """
 from __future__ import annotations
 import numpy as np

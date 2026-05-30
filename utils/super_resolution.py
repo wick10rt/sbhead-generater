@@ -1,8 +1,11 @@
-"""Real-ESRGAN 超解析度模組（RealESRGAN_x4plus_anime_6B）。
+"""Real-ESRGAN 超解析度模組（RealESRGAN_x4plus_anime_6B）— AMD ROCm 版。
 
 x4plus 一次放大 4 倍，以 while 迴圈反覆執行直到短邊 ≥ TARGET_SIZE。
-VRAM 管理（3090 24GB）：fp16 + 固定 tile=1024 + 每輪後 empty_cache，
-避免 caching allocator 累積殘留導致後輪 OOM。失敗時 fallback cv2.resize。
+ROCm 下 PyTorch 的 torch.cuda.* API（is_available / half / empty_cache）
+會透過 HIP 對應到 AMD GPU，因此程式碼與 CUDA 版幾乎相同。
+VRAM 管理（AMD 8~12GB，如 7800XT / 6700XT）：fp16 + 固定 tile=512 +
+每輪後 empty_cache，避免 caching allocator 累積殘留導致後輪 OOM。
+失敗時 fallback cv2.resize。
 """
 from __future__ import annotations
 import sys
@@ -16,7 +19,9 @@ WEIGHTS_PATH = _THIS_DIR.parent / "weights" / "RealESRGAN_x4plus_anime_6B.pth"
 
 SR_SCALE = 4
 TARGET_SIZE = 4096
-TILE_SIZE = 1024
+# AMD 8~12GB 顯卡：tile 固定 512（24GB 才適合 1024，12GB 用 1024 會 OOM）。
+# fp16 下每塊約 0.25~0.5GB，512 在中階卡上安全。
+TILE_SIZE = 512
 TILE_PAD = 10
 
 _upsampler = None
@@ -52,7 +57,16 @@ def _load_model():
             scale=SR_SCALE,
         )
 
+        # ROCm 下 torch.cuda.is_available() 一樣回傳 True；torch.version.hip
+        # 有值代表走 AMD ROCm，None 則代表非 ROCm build（可能誤裝 CUDA 版）。
         use_cuda = torch.cuda.is_available()
+        if use_cuda:
+            hip_ver = getattr(torch.version, "hip", None)
+            backend = f"AMD ROCm (HIP {hip_ver})" if hip_ver else "CUDA"
+            print(f"SR 使用 GPU：{torch.cuda.get_device_name(0)}（{backend}）", flush=True)
+        else:
+            print("SR 未偵測到可用 GPU，將於放大時 fallback cv2.resize", flush=True)
+
         _upsampler = RealESRGANer(
             scale=SR_SCALE,
             model_path=str(WEIGHTS_PATH),

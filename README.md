@@ -1,6 +1,10 @@
 # sbhead-generater
 **Bang Dream 角色大頭貼自動生成系統**
 
+> 🟥 **本分支為 AMD GPU 版本**（Linux + ROCm 6.2，目標顯卡 7800XT / 6700XT 等 8~12GB）。
+> NVIDIA / CUDA 版請見 `main` 分支。兩者差異僅在 PyTorch 安裝方式、臉部偵測後端
+> 與 SR 的 VRAM 參數（tile=512），核心流程相同。
+
 ---
 
 ## 一、專案介紹
@@ -49,7 +53,7 @@
 | NumPy | 處理圖片陣列與像素資料 |
 | dghs-imgutils | 偵測動漫角色臉部位置 |
 | Real-ESRGAN | AI 超解析度放大，採用 RealESRGAN_x4plus_anime_6B 動漫專用權重 |
-| PyTorch 2.2.2 | 支援 Real-ESRGAN 模型執行 |
+| PyTorch (ROCm 6.2) | 支援 Real-ESRGAN 模型執行；ROCm 下 torch.cuda.* 經 HIP 對應到 AMD GPU |
 
 ---
 
@@ -71,17 +75,30 @@ conda activate sbhead
 python -m pip install --upgrade pip
 ```
 
-安裝 PyTorch（NVIDIA 顯卡版）：
+安裝 PyTorch（AMD 顯卡 ROCm 版）：
+
+> 本分支為 **AMD GPU + Linux + ROCm 6.2** 版本。PyTorch 須使用 ROCm 專用 wheel，
+> 不可使用 PyPI 預設版（那是 CUDA build，AMD 不能用）。
 
 ```bash
-conda install pytorch=2.2.2 torchvision=0.17.2 pytorch-cuda=11.8 -c pytorch -c nvidia -y
+pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2
 ```
+
+> **6700XT / 部分 RDNA2 卡注意**：若 ROCm 未官方支援該 gfx 架構（如 gfx1031），
+> 執行時可能需要設定環境變數覆蓋：
+> ```bash
+> export HSA_OVERRIDE_GFX_VERSION=10.3.0
+> ```
+> 7800XT（gfx1101）等 RDNA3 卡通常不需要。
 
 安裝其餘套件：
 
 ```bash
 pip install -r requirements.txt
 ```
+
+> 注意：`requirements.txt` 已**不含** torch / torchvision（須如上用 ROCm wheel 另裝），
+> 且 `dghs-imgutils` 不裝 `[gpu]` extra（onnxruntime-gpu 為 CUDA 專用），臉部偵測走 CPU。
 
 ### 步驟 2：下載 Real-ESRGAN 權重檔
 
@@ -108,8 +125,13 @@ ImportError: cannot import name 'rgb_to_grayscale' from 'torchvision.transforms.
 找到以下檔案（路徑依你的 conda 環境而定）：
 
 ```
-C:\Users\<你的帳號>\anaconda3\envs\sbhead\Lib\site-packages\basicsr\data\degradations.py
+~/anaconda3/envs/sbhead/lib/python3.10/site-packages/basicsr/data/degradations.py
 ```
+
+> 小技巧：可用以下指令直接定位檔案路徑：
+> ```bash
+> python -c "import basicsr, os; print(os.path.join(os.path.dirname(basicsr.__file__), 'data', 'degradations.py'))"
+> ```
 
 開啟後找到這一行：
 
@@ -145,6 +167,15 @@ sbhead-generater/
 python -c "import cv2, torch, realesrgan; from imgutils.detect import detect_faces; print('環境驗證通過')"
 ```
 
+確認 ROCm 是否正確啟用（AMD 版重點）：
+
+```bash
+python -c "import torch; print('HIP:', torch.version.hip); print('GPU 可用:', torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else '無 GPU')"
+```
+
+`HIP` 有版本號、`GPU 可用: True` 並印出你的 AMD 顯卡名稱，代表 ROCm 正常。
+若 `HIP: None`，表示裝到 CUDA 版 PyTorch，請重裝 ROCm wheel。
+
 看到 `環境驗證通過` 就代表環境設定完成，可以開始執行程式。
 
 ---
@@ -169,7 +200,7 @@ python main.py -i sample_images/kasumi.jpg
 >
 > **注意 2**：4096×4096 PNG 單檔約 5–20 MB，多臉合照單次執行可能輸出 50–200 MB。請留意磁碟空間。
 >
-> **注意 3**：裁切尺寸越小，需要的 Real-ESRGAN pass 數越多（例：裁切 800 → 3200 → 12800 共 2 次；裁切 167 → 668 → 2672 → 10688 共 3 次），耗時與 VRAM 用量會比裁切較大的情況明顯增加。SR 使用 tile=1024 + fp16 並在每輪後釋放 GPU 殘留記憶體；若仍因 VRAM 不足失敗，會自動 fallback 到傳統 resize 並印警告。
+> **注意 3**：裁切尺寸越小，需要的 Real-ESRGAN pass 數越多（例：裁切 800 → 3200 → 12800 共 2 次；裁切 167 → 668 → 2672 → 10688 共 3 次），耗時與 VRAM 用量會比裁切較大的情況明顯增加。本 AMD 版針對 8~12GB 顯卡（如 7800XT / 6700XT）使用 tile=512 + fp16 並在每輪後釋放 GPU 殘留記憶體；若仍因 VRAM 不足失敗，會自動 fallback 到傳統 resize 並印警告。
 
 ---
 
