@@ -1,6 +1,10 @@
-"""影像增強模組：降噪、銳化、對比度。
+"""影像增強模組：降噪、銳化。
 
-保守參數避免動漫線條過度處理。順序：bilateral 降噪 → unsharp 銳化 → CLAHE 對比。
+保守參數避免動漫線條過度處理。順序：bilateral 降噪 → unsharp 銳化。
+
+備註：原本還有 CLAHE 局部對比度均衡，但動漫圖本身是高對比平塗，CLAHE 會在
+臉頰等柔和漸層區把局部對比硬拉開，造成腮紅中心被壓暗、出現塊狀髒污（經 SR
+放大後更明顯），收益最小、風險最大，故移除。對比度交由原圖既有調性即可。
 """
 from __future__ import annotations
 import cv2
@@ -13,12 +17,9 @@ BILATERAL_SIGMA_SPACE = 30
 UNSHARP_SIGMA = 1.5
 UNSHARP_AMOUNT = 0.3
 
-CLAHE_CLIP_LIMIT = 1.5
-CLAHE_TILE_SIZE = (8, 8)
-
 
 def enhance_image(image: np.ndarray) -> np.ndarray:
-    """對 RGB 圖片做降噪、銳化與對比度增強，回傳同形狀 RGB。"""
+    """對 RGB 圖片做降噪與銳化，回傳同形狀 RGB。"""
     bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
     denoised = cv2.bilateralFilter(
@@ -36,18 +37,7 @@ def enhance_image(image: np.ndarray) -> np.ndarray:
         0,
     )
 
-    # 只在 LAB 的 L 通道做 CLAHE，避免色偏
-    lab = cv2.cvtColor(sharpened, cv2.COLOR_BGR2LAB)
-    l_channel, a_channel, b_channel = cv2.split(lab)
-    clahe = cv2.createCLAHE(
-        clipLimit=CLAHE_CLIP_LIMIT,
-        tileGridSize=CLAHE_TILE_SIZE,
-    )
-    l_channel = clahe.apply(l_channel)
-    lab = cv2.merge([l_channel, a_channel, b_channel])
-    enhanced_bgr = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
-
-    return cv2.cvtColor(enhanced_bgr, cv2.COLOR_BGR2RGB)
+    return cv2.cvtColor(sharpened, cv2.COLOR_BGR2RGB)
 
 
 if __name__ == "__main__":

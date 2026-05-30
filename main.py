@@ -75,7 +75,7 @@ def process_single_face(
     print(f"裁切完成，尺寸 {crop_size}×{crop_size}")
 
     enhanced = enhance_image(cropped)
-    print("影像增強完成（銳化 + 降噪 + 對比）")
+    print("影像增強完成（銳化 + 降噪）")
 
     raw_image = enhanced
 
