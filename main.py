@@ -21,10 +21,8 @@ from utils import (
 )
 from utils.super_resolution import TARGET_SIZE as SR_TARGET_SIZE
 
-# 最終輸出尺寸（2048）。SR 目標尺寸（SR_TARGET_SIZE=4096）刻意比輸出大：
-# sr 版先用 Real-ESRGAN 超採樣到 4096，再由 avatar_output 以 INTER_AREA
-# 縮小到 2048，縮小本身即天然抗鋸齒、邊緣更平滑。
-OUTPUT_SIZE = 2048
+# SR 觸發/目標尺寸（4096）。raw 與 sr 兩版都輸出 4096，2048out/ 則由 sr 版
+# 4096 以 INTER_AREA 縮小而來（縮小即天然抗鋸齒），三者尺寸由 avatar_output 處理。
 SUPPORTED_EXTS = {".jpg", ".jpeg", ".png"}
 PROJECT_ROOT = Path(__file__).parent
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
@@ -70,10 +68,11 @@ def process_single_face(
     image: np.ndarray,
     bbox: tuple[int, int, int, int],
 ) -> tuple[np.ndarray, np.ndarray]:
-    """處理單一張臉，回傳 (raw_image, sr_image)，皆尚未 resize 到 OUTPUT_SIZE。
+    """處理單一張臉，回傳 (raw_image, sr_image)，皆尚未 resize 到輸出尺寸。
 
     raw 版只做裁切 + enhance；sr 版在裁切尺寸 < SR 目標（4096）時連續跑
-    Real-ESRGAN 超採樣，之後由 avatar_output 統一縮小到 OUTPUT_SIZE（2048）。
+    Real-ESRGAN 超採樣。輸出尺寸（raw/sr 4096、2048out 由 sr 縮小）由
+    avatar_output.save_paired_avatar 統一處理。
     """
     cropped = crop_by_bbox(image, bbox)
     crop_size = cropped.shape[0]
@@ -113,7 +112,7 @@ def run_single(input_path: Path) -> None:
     base_index = next_paired_index(OUTPUTS_DIR)
     print(f"依序處理 {n_faces} 張臉，起始編號 {base_index}")
 
-    success_paths: list[tuple[Path, Path]] = []
+    success_paths: list[tuple[Path, Path, Path]] = []
     failed_faces: list[int] = []
 
     for i, bbox in enumerate(bboxes):
@@ -121,20 +120,22 @@ def run_single(input_path: Path) -> None:
         print(f"第 {i + 1}/{n_faces} 張臉 bbox={bbox}")
         try:
             raw_image, sr_image = process_single_face(image, bbox)
-            raw_path, sr_path = save_paired_avatar(
+            raw_path, sr_path, final_path = save_paired_avatar(
                 raw_image, sr_image, OUTPUTS_DIR, index,
             )
             print(f"輸出 raw → {raw_path}")
             print(f"輸出 sr → {sr_path}")
-            success_paths.append((raw_path, sr_path))
+            print(f"輸出 2048out → {final_path}")
+            success_paths.append((raw_path, sr_path, final_path))
         except Exception as exc:
             print(f"警告：第 {i + 1} 張臉處理失敗（{exc}），跳過。", file=sys.stderr)
             failed_faces.append(i + 1)
 
     print(f"完成，成功 {len(success_paths)}/{n_faces} 張")
-    for raw_path, sr_path in success_paths:
+    for raw_path, sr_path, final_path in success_paths:
         print(f"raw → {raw_path}")
         print(f"sr → {sr_path}")
+        print(f"2048out → {final_path}")
     if failed_faces:
         print(f"失敗臉部編號：{failed_faces}")
 
@@ -175,11 +176,12 @@ def run_batch(image_paths: list[Path]) -> None:
             print(f"第 {i + 1}/{n_faces} 張臉 bbox={bbox}")
             try:
                 raw_image, sr_image = process_single_face(image, bbox)
-                raw_path, sr_path = save_paired_avatar(
+                raw_path, sr_path, final_path = save_paired_avatar(
                     raw_image, sr_image, OUTPUTS_DIR, next_index,
                 )
                 print(f"輸出 raw → {raw_path}")
                 print(f"輸出 sr → {sr_path}")
+                print(f"輸出 2048out → {final_path}")
                 next_index += 1
                 total_success += 1
             except Exception as exc:

@@ -16,7 +16,7 @@
 
 ## 專案目標
 
-使用者在本機端透過終端機執行 Python 程式，輸入一張動漫角色圖片路徑後，系統自動偵測臉部、裁切頭像、進行畫質增強與 AI 超解析度放大，輸出 2048×2048 PNG 大頭貼。
+使用者在本機端透過終端機執行 Python 程式，輸入一張動漫角色圖片路徑後，系統自動偵測臉部、裁切頭像、進行畫質增強與 AI 超解析度放大，每張臉輸出 raw / sr 兩個 4096×4096 PNG，外加一個由 sr 縮小的 2048×2048 最終成品。
 
 不需要網頁介面、GUI、Streamlit、Gradio。只需要終端機指令執行。
 
@@ -27,17 +27,17 @@
 | 項目 | 決定 |
 |------|------|
 | 執行指令 | `python main.py -i <圖片路徑>`，僅此一個 flag |
-| 輸出位置 | `main.py` 同層 `outputs/` 資料夾下分 `raw/` 與 `sr/` 兩個子資料夾 |
-| 輸出格式 | 固定 PNG，2048×2048 |
-| 輸出命名 | `raw/output.png` + `sr/output.png`；多臉或重跑時 `output(1).png`、`output(2).png`…，raw 與 sr 兩邊編號同步 |
+| 輸出位置 | `main.py` 同層 `outputs/` 下分 `raw/`、`sr/`、`2048out/` 三個子資料夾 |
+| 輸出格式 | raw / sr 固定 PNG 4096×4096；2048out 固定 PNG 2048×2048（由 sr 縮小） |
+| 輸出命名 | `raw/output.png` + `sr/output.png` + `2048out/output.png`；多臉或重跑時 `output(1).png`、`output(2).png`…，三邊編號同步 |
 | 輸入格式 | JPG / JPEG / PNG |
 | 臉部偵測 | dghs-imgutils（**不裝 [gpu]**：onnxruntime-gpu 為 CUDA 專用，AMD 不相容，偵測走 CPU） |
 | 多臉策略 | 偵測到的所有臉部全部處理（按偵測器原順序），單張失敗印警告後跳過、繼續處理其他臉 |
 | 偵測失敗 | 無臉時 `sys.exit(1)` + 清楚錯誤訊息，不輸出任何檔案 |
 | 裁切外擴倍率 | EXPAND_RATIO=1.6（bbox 寬高最大邊 ×1.6），EXTRA_TOP_RATIO=0.15（向上偏移以包含頭髮） |
 | Enhance | 永遠自動執行（銳化 + 降噪；已移除 CLAHE 對比，動漫臉頰會被壓暗成塊），raw 與 sr 兩版都套 |
-| 雙版本輸出 | 每張臉同時輸出 raw 版（不跑 SR）與 sr 版（跑 SR）以便比對；兩版都 2048×2048 |
-| SR 條件 | 裁切後尺寸 < 4096 → sr 版**連續跑 Real-ESRGAN 直到 ≥ 4096（SR 目標超採樣）**，再統一縮小到 2048；≥ 4096 → sr 版與 raw 版內容相同（都直接 resize 到 2048） |
+| 多版本輸出 | 每張臉輸出 raw（不跑 SR）+ sr（跑 SR）兩個 4096，加 2048out（由 sr 4096 縮小）最終成品 |
+| SR 條件 | 裁切後尺寸 < 4096 → sr 版**連續跑 Real-ESRGAN 直到 ≥ 4096**；≥ 4096 → sr 版與 raw 版內容相同（都直接 resize 4096）。2048out 一律由 sr 4096 以 INTER_AREA 縮小 |
 | SR 模型 | `RealESRGAN_x4plus_anime_6B.pth`，放 `weights/`；**tile=512 固定分塊**（AMD 8~12GB，24GB 才適合 1024）；**fp16**（VRAM 砍半，動漫圖品質影響極小）；每輪 SR 後 `torch.cuda.empty_cache()` 釋放殘留（ROCm 下經 HIP 有效，防後輪 OOM） |
 | 路徑處理 | pathlib + PIL |
 | 中間結果 | 不儲存 |
@@ -81,8 +81,9 @@ sbhead-generater/
 │   └── RealESRGAN_x4plus_anime_6B.pth   ← gitignored，需自行下載
 ├── sample_images/               ← gitignored，放測試圖
 └── outputs/                     ← gitignored，main.py 自動建立
-    ├── raw/                     # 未做 SR 的版本
-    └── sr/                      # 做完 SR 的版本（檔名與 raw/ 同步）
+    ├── raw/                     # 未做 SR 的版本（4096）
+    ├── sr/                      # 做完 SR 的版本（4096，檔名與 raw/ 同步）
+    └── 2048out/                 # 最終成品（2048，由 sr 縮小，檔名同步）
 ```
 
 ---
@@ -96,15 +97,16 @@ python main.py -i <圖片路徑>
        ↓
 dghs-imgutils 偵測動漫臉部 → 取得 N 個 bbox（按偵測器原順序）
   → N == 0：sys.exit(1) + 錯誤訊息
-  → N ≥ 1：先決定本次執行用的「起始編號」base（raw/ 與 sr/ 取兩邊最大編號 + 1）
+  → N ≥ 1：先決定本次執行用的「起始編號」base（raw/、sr/、2048out/ 取三邊最大編號 + 1）
        ↓
 for i in range(N):                ← 對每張臉跑同樣流程
   ├─ 依 bbox 裁切（EXPAND_RATIO=1.6，EXTRA_TOP_RATIO=0.15，正方形化）
   ├─ enhance（銳化 + 降噪）
-  ├─ raw 版：直接 resize 2048×2048 → 存 outputs/raw/output(base+i).png
+  ├─ raw 版：直接 resize 4096×4096 → 存 outputs/raw/output(base+i).png
   └─ sr 版：
-      ├─ 裁切尺寸 < 4096：Real-ESRGAN 連續跑（每次 ×4）直到 ≥ 4096 → 縮小 2048 → 存 outputs/sr/output(base+i).png
-      └─ 裁切尺寸 ≥ 4096：直接 resize 2048（與 raw 內容相同）→ 存 outputs/sr/output(base+i).png
+      ├─ 裁切尺寸 < 4096：Real-ESRGAN 連續跑（每次 ×4）直到 ≥ 4096 → resize 4096 → 存 outputs/sr/output(base+i).png
+      └─ 裁切尺寸 ≥ 4096：直接 resize 4096（與 raw 內容相同）→ 存 outputs/sr/output(base+i).png
+  └─ 2048out 成品：sr 4096 以 INTER_AREA 縮小 2048 → 存 outputs/2048out/output(base+i).png
   ※ 單張臉處理過程中拋例外 → 印警告後 continue 下一張，不中斷整批
        ↓
 終端機列出本次輸出的所有檔案路徑、成功 X/N 張
@@ -136,18 +138,19 @@ for i in range(N):                ← 對每張臉跑同樣流程
 - 載入 `weights/RealESRGAN_x4plus_anime_6B.pth`（路徑相對 main.py）
 - 優先使用 AMD GPU（ROCm；`torch.cuda.is_available()` 在 ROCm 下亦為 True，`torch.version.hip` 有值代表走 ROCm）
 - **VRAM 管理**：AMD 8~12GB 顯卡，多輪 SR 後 caching allocator 殘留易在後輪 OOM。修正：`tile=512` 固定（fp16 下每塊約 0.25~0.5GB）、`half=True`（VRAM 砍半）、每輪 SR 後 `torch.cuda.empty_cache()`（ROCm 下經 HIP 有效，釋放殘留）
-- **連續多次 SR**：x4plus 一次只能放大 4 倍。內部以 while 迴圈反覆套用 SR，直到輸出邊長 ≥ TARGET_SIZE（4096，SR 目標超採樣）才回傳。例：800 → 3200 → 12800（停止，後續由 avatar_output 統一 INTER_AREA 縮小到 OUTPUT_SIZE=2048，縮小即天然抗鋸齒）
+- **連續多次 SR**：x4plus 一次只能放大 4 倍。內部以 while 迴圈反覆套用 SR，直到輸出邊長 ≥ TARGET_SIZE（4096）才回傳。例：800 → 3200 → 12800（停止，後續由 avatar_output 統一 resize 回 4096；2048out 再由此 4096 以 INTER_AREA 縮小）
 - 執行失敗 → fallback `cv2.resize` + 印警告（fallback 一次性放大到目標倍率，不再進迴圈）
 - 模型 cache：第一張臉觸發載入後，後續多張臉共用同一個 upsampler 實例
 
 ### `utils/avatar_output.py`
 - 函式 1：`next_paired_index(outputs_dir: Path) -> int`
-  - 同時掃描 `outputs_dir/raw/` 與 `outputs_dir/sr/`，回傳兩邊現有最大編號 + 1 作為本次執行的起始 index
+  - 同時掃描 `outputs_dir/raw/`、`outputs_dir/sr/`、`outputs_dir/2048out/`，回傳三邊現有最大編號 + 1 作為本次執行的起始 index
   - `output.png` 視為 index 0，`output(N).png` 視為 index N
-- 函式 2：`save_paired_avatar(raw_image, sr_image, outputs_dir: Path, index: int) -> tuple[Path, Path]`
-  - 把 raw 與 sr 兩張圖各 resize 到 2048×2048（縮小用 INTER_AREA、放大用 INTER_CUBIC），存到 `outputs_dir/raw/` 與 `outputs_dir/sr/` 同名檔案
+- 函式 2：`save_paired_avatar(raw_image, sr_image, outputs_dir: Path, index: int) -> tuple[Path, Path, Path]`
+  - raw 與 sr 各 resize 到 4096×4096 存 `raw/`、`sr/`；再由 sr 的 4096 版以 INTER_AREA 縮小到 2048×2048 存 `2048out/`
+  - resize 規則：縮小用 INTER_AREA、放大用 INTER_CUBIC
   - 命名：index=0 → `output.png`、index=N → `output(N).png`
-  - 自動建立 `raw/` 與 `sr/` 子資料夾
+  - 自動建立 `raw/`、`sr/`、`2048out/` 三個子資料夾
 
 ---
 
