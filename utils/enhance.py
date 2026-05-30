@@ -14,8 +14,11 @@ BILATERAL_D = 5
 BILATERAL_SIGMA_COLOR = 30
 BILATERAL_SIGMA_SPACE = 30
 
-UNSHARP_SIGMA = 1.5
-UNSHARP_AMOUNT = 0.3
+UNSHARP_SIGMA = 1.2
+# 銳化力度。動漫線稿邊緣本身是抗鋸齒（柔和過渡像素）畫的，unsharp 會把邊緣
+# 對比硬拉大、消掉抗鋸齒，露出像素階梯（鋸齒）。0.3 對乾淨線稿偏重，降到
+# 0.15 在「提升清晰度」與「不破壞抗鋸齒」之間取平衡。
+UNSHARP_AMOUNT = 0.15
 
 
 def enhance_image(image: np.ndarray) -> np.ndarray:
