@@ -32,7 +32,6 @@ def enhance_image(image: np.ndarray) -> np.ndarray:
         sigmaSpace=BILATERAL_SIGMA_SPACE,
     )
 
-    # unsharp mask：原圖加權減去模糊圖
     blurred = cv2.GaussianBlur(denoised, (0, 0), sigmaX=UNSHARP_SIGMA)
     sharpened = cv2.addWeighted(
         denoised, 1.0 + UNSHARP_AMOUNT,

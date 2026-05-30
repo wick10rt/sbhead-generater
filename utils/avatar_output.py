@@ -101,7 +101,6 @@ if __name__ == "__main__":
         test_dir.rmdir()
 
     fake_raw = np.zeros((512, 512, 3), dtype=np.uint8)
-    # 模擬 sr 帶著 4096 超採樣中間產物進來，應被 INTER_AREA 縮到 2048
     fake_sr = np.full((4096, 4096, 3), 200, dtype=np.uint8)
 
     results = []

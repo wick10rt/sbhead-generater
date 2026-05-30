@@ -25,11 +25,8 @@ def detect_all_faces(
         所有臉部 bbox 列表 [(x0, y0, x1, y1), ...]，順序依 dghs-imgutils
         偵測器原順序，皆為 int。未偵測到任何臉部時回傳空 list。
     """
-    # dghs-imgutils 0.19+ 的 detect_faces 不接受 ndarray，
-    # 只認 PIL.Image / 檔案路徑 / BinaryIO，所以先轉 PIL.Image。
     pil_image = Image.fromarray(image) if isinstance(image, np.ndarray) else image
 
-    # detect_faces 回傳 list，元素為 ((x0, y0, x1, y1), label, score)
     detections = detect_faces(pil_image)
 
     return [
@@ -39,7 +36,6 @@ def detect_all_faces(
 
 
 if __name__ == "__main__":
-    # 單獨測試：讀 sample_images/ 內第一張圖
     from pathlib import Path
     from PIL import Image
 

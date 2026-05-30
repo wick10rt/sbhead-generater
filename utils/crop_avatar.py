@@ -25,7 +25,6 @@ def crop_by_bbox(
 
     side = max(bbox_w, bbox_h) * EXPAND_RATIO
 
-    # 中心向上偏移，讓上方包含更多頭髮
     cy -= side * EXTRA_TOP_RATIO / 2.0
 
     sx0 = cx - side / 2.0
@@ -33,7 +32,6 @@ def crop_by_bbox(
     sx1 = cx + side / 2.0
     sy1 = cy + side / 2.0
 
-    # 超出邊界先平移，盡量保持正方形大小
     if sx0 < 0:
         sx1 += -sx0
         sx0 = 0
@@ -52,7 +50,6 @@ def crop_by_bbox(
     sx1 = min(w, int(round(sx1)))
     sy1 = min(h, int(round(sy1)))
 
-    # 平移後仍可能超出（原圖比正方形小），取較短邊裁成正方形
     final_side = min(sx1 - sx0, sy1 - sy0)
     sx1 = sx0 + final_side
     sy1 = sy0 + final_side

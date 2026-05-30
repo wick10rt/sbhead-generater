@@ -40,7 +40,6 @@ def _load_model():
             f"下載 RealESRGAN_x4plus_anime_6B.pth 放到 weights/ 內。"
         )
 
-    # 抑制 basicsr / realesrgan 啟動時的相容性 warning
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         import torch
@@ -57,8 +56,6 @@ def _load_model():
             scale=SR_SCALE,
         )
 
-        # ROCm 下 torch.cuda.is_available() 一樣回傳 True；torch.version.hip
-        # 有值代表走 AMD ROCm，None 則代表非 ROCm build（可能誤裝 CUDA 版）。
         use_cuda = torch.cuda.is_available()
         if use_cuda:
             hip_ver = getattr(torch.version, "hip", None)
@@ -103,7 +100,6 @@ def upscale_image(image: np.ndarray) -> np.ndarray:
             out_h, out_w = bgr.shape[:2]
             print(f"SR pass #{pass_index} 輸出 {out_w}×{out_h}", flush=True)
 
-            # 釋放 caching allocator 殘留，避免多輪累積導致後輪 OOM
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
@@ -138,7 +134,6 @@ if __name__ == "__main__":
     test_path = images[0]
     img = np.array(Image.open(test_path).convert("RGB"))
 
-    # 縮成 800×800 模擬裁切後 < 4096，會跑 2 次 SR（800 → 3200 → 12800）
     small = cv2.resize(img, (800, 800), interpolation=cv2.INTER_AREA)
     print(f"輸入（縮小後）：{small.shape}")
     print(f"目標短邊 ≥ {TARGET_SIZE}")
