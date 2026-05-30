@@ -19,8 +19,12 @@ from utils import (
     next_paired_index,
     save_paired_avatar,
 )
+from utils.super_resolution import TARGET_SIZE as SR_TARGET_SIZE
 
-OUTPUT_SIZE = 4096
+# 最終輸出尺寸（2048）。SR 目標尺寸（SR_TARGET_SIZE=4096）刻意比輸出大：
+# sr 版先用 Real-ESRGAN 超採樣到 4096，再由 avatar_output 以 INTER_AREA
+# 縮小到 2048，縮小本身即天然抗鋸齒、邊緣更平滑。
+OUTPUT_SIZE = 2048
 SUPPORTED_EXTS = {".jpg", ".jpeg", ".png"}
 PROJECT_ROOT = Path(__file__).parent
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
@@ -68,7 +72,8 @@ def process_single_face(
 ) -> tuple[np.ndarray, np.ndarray]:
     """處理單一張臉，回傳 (raw_image, sr_image)，皆尚未 resize 到 OUTPUT_SIZE。
 
-    raw 版只做裁切 + enhance；sr 版在裁切尺寸 < 4096 時連續跑 Real-ESRGAN。
+    raw 版只做裁切 + enhance；sr 版在裁切尺寸 < SR 目標（4096）時連續跑
+    Real-ESRGAN 超採樣，之後由 avatar_output 統一縮小到 OUTPUT_SIZE（2048）。
     """
     cropped = crop_by_bbox(image, bbox)
     crop_size = cropped.shape[0]
@@ -79,11 +84,12 @@ def process_single_face(
 
     raw_image = enhanced
 
-    if crop_size < OUTPUT_SIZE:
-        print(f"裁切尺寸 < {OUTPUT_SIZE}，執行 Real-ESRGAN")
+    # SR 觸發以「SR 目標尺寸」為準（非最終輸出尺寸）：裁切 < 4096 才需超採樣。
+    if crop_size < SR_TARGET_SIZE:
+        print(f"裁切尺寸 < {SR_TARGET_SIZE}，執行 Real-ESRGAN 超採樣")
         sr_image = upscale_image(enhanced)
     else:
-        print(f"裁切尺寸 ≥ {OUTPUT_SIZE}，跳過 SR（sr 版同 raw 版）")
+        print(f"裁切尺寸 ≥ {SR_TARGET_SIZE}，跳過 SR（sr 版同 raw 版）")
         sr_image = enhanced
 
     return raw_image, sr_image
