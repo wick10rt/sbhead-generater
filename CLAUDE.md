@@ -31,17 +31,17 @@
 | 輸出格式 | 固定 PNG，4096×4096 |
 | 輸出命名 | `raw/output.png` + `sr/output.png`；多臉或重跑時 `output(1).png`、`output(2).png`…，raw 與 sr 兩邊編號同步 |
 | 輸入格式 | JPG / JPEG / PNG |
-| 臉部偵測 | dghs-imgutils[gpu]（`pip install dghs-imgutils[gpu]`） |
+| 臉部偵測 | dghs-imgutils（**不裝 [gpu]**：onnxruntime-gpu 為 CUDA 專用，AMD 不相容，偵測走 CPU） |
 | 多臉策略 | 偵測到的所有臉部全部處理（按偵測器原順序），單張失敗印警告後跳過、繼續處理其他臉 |
 | 偵測失敗 | 無臉時 `sys.exit(1)` + 清楚錯誤訊息，不輸出任何檔案 |
 | 裁切外擴倍率 | EXPAND_RATIO=1.6（bbox 寬高最大邊 ×1.6），EXTRA_TOP_RATIO=0.15（向上偏移以包含頭髮） |
 | Enhance | 永遠自動執行（銳化 + 降噪 + 對比），raw 與 sr 兩版都套 |
 | 雙版本輸出 | 每張臉同時輸出 raw 版（不跑 SR）與 sr 版（跑 SR）以便比對；兩版都 4096×4096 |
 | SR 條件 | 裁切後尺寸 < 4096 → sr 版**連續跑 Real-ESRGAN 直到 ≥ 4096** 後 resize；≥ 4096 → sr 版與 raw 版內容相同（都直接 resize） |
-| SR 模型 | `RealESRGAN_x4plus_anime_6B.pth`，放 `weights/`；**tile=1024 固定分塊**；**fp16**（VRAM 砍半，動漫圖品質影響極小）；每輪 SR 後 `torch.cuda.empty_cache()` 釋放殘留（防 pass #3 OOM） |
+| SR 模型 | `RealESRGAN_x4plus_anime_6B.pth`，放 `weights/`；**tile=512 固定分塊**（AMD 8~12GB，24GB 才適合 1024）；**fp16**（VRAM 砍半，動漫圖品質影響極小）；每輪 SR 後 `torch.cuda.empty_cache()` 釋放殘留（ROCm 下經 HIP 有效，防後輪 OOM） |
 | 路徑處理 | pathlib + PIL |
 | 中間結果 | 不儲存 |
-| 平台 | Windows 11 + NVIDIA RTX 3090 24GB |
+| 平台 | Linux + AMD GPU + ROCm 6.2（目標 7800XT / 6700XT 等 8~12GB） |
 | 程式碼註解 | 繁體中文 |
 | basicsr 修補 | 手改套件原始碼（見 README.md） |
 
@@ -56,9 +56,9 @@
 | OpenCV | 影像裁切、resize、銳化、降噪、對比度調整 |
 | Pillow | 圖片讀取、格式轉換、PNG 輸出 |
 | NumPy | 處理圖片陣列與像素資料 |
-| dghs-imgutils | 偵測動漫角色臉部位置 |
+| dghs-imgutils | 偵測動漫角色臉部位置（CPU 後端） |
 | Real-ESRGAN | AI 超解析度放大（RealESRGAN_x4plus_anime_6B） |
-| PyTorch 2.2.2 | 支援 Real-ESRGAN 模型執行 |
+| PyTorch (ROCm 6.2) | 支援 Real-ESRGAN 模型執行；torch.cuda.* 經 HIP 對應 AMD GPU |
 
 ---
 
@@ -134,8 +134,8 @@ for i in range(N):                ← 對每張臉跑同樣流程
 ### `utils/super_resolution.py`
 - 函式：`upscale_image(image: np.ndarray) -> np.ndarray`
 - 載入 `weights/RealESRGAN_x4plus_anime_6B.pth`（路徑相對 main.py）
-- 優先使用 CUDA GPU
-- **VRAM 管理**：fp32×tile=2048 + PyTorch caching allocator 殘留 → pass #3（輸入 2672×2672）需 16GB、3090 24GB OOM。修正：`tile=1024` 固定（fp16 下每塊約 1GB）、`half=True`（VRAM 砍半）、每輪 SR 後 `torch.cuda.empty_cache()`（釋放殘留）
+- 優先使用 AMD GPU（ROCm；`torch.cuda.is_available()` 在 ROCm 下亦為 True，`torch.version.hip` 有值代表走 ROCm）
+- **VRAM 管理**：AMD 8~12GB 顯卡，多輪 SR 後 caching allocator 殘留易在後輪 OOM。修正：`tile=512` 固定（fp16 下每塊約 0.25~0.5GB）、`half=True`（VRAM 砍半）、每輪 SR 後 `torch.cuda.empty_cache()`（ROCm 下經 HIP 有效，釋放殘留）
 - **連續多次 SR**：x4plus 一次只能放大 4 倍。內部以 while 迴圈反覆套用 SR，直到輸出邊長 ≥ TARGET_SIZE（4096）才回傳。例：800 → 3200 → 12800（停止，後續由 avatar_output 統一 resize 回 4096）
 - 執行失敗 → fallback `cv2.resize` + 印警告（fallback 一次性放大到目標倍率，不再進迴圈）
 - 模型 cache：第一張臉觸發載入後，後續多張臉共用同一個 upsampler 實例

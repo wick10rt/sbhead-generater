@@ -15,17 +15,17 @@
 | 輸出格式 | 固定 PNG，4096×4096 |
 | 輸出命名 | `output.png`、`output(1).png`、`output(2).png`…，raw/ 與 sr/ 兩邊編號同步 |
 | 輸入格式 | JPG / JPEG / PNG |
-| 臉部偵測 | dghs-imgutils[gpu]（`pip install dghs-imgutils[gpu]`） |
+| 臉部偵測 | dghs-imgutils（不裝 [gpu]，onnxruntime-gpu 為 CUDA 專用、AMD 不相容；偵測走 CPU） |
 | 多臉策略 | 偵測到的所有臉部全部處理（按偵測器原順序），單張失敗印警告後跳過、繼續其他臉 |
 | 偵測失敗 | 無臉時 `sys.exit(1)` + 清楚錯誤訊息，不輸出任何檔案 |
 | 裁切外擴倍率 | EXPAND_RATIO=1.6（bbox 寬高最大邊 ×1.6），EXTRA_TOP_RATIO=0.15 |
 | Enhance | 永遠自動執行（銳化 + 降噪 + 對比），raw 與 sr 兩版都套 |
 | 雙版本輸出 | 每張臉同時輸出 raw 版（不跑 SR）與 sr 版（跑 SR）以便比對；兩版都 4096×4096 |
 | SR 條件 | 裁切後尺寸 < 4096 → sr 版**連續跑 Real-ESRGAN 直到 ≥ 4096**；≥ 4096 → sr 版與 raw 版內容相同（都直接 resize） |
-| SR 模型 | `RealESRGAN_x4plus_anime_6B.pth`，放 `weights/`；tile=1024 固定分塊；fp16（VRAM 砍半）；每輪 SR 後 `torch.cuda.empty_cache()` 防 pass #3 OOM |
+| SR 模型 | `RealESRGAN_x4plus_anime_6B.pth`，放 `weights/`；tile=512 固定分塊（AMD 8~12GB）；fp16（VRAM 砍半）；每輪 SR 後 `torch.cuda.empty_cache()` 防後輪 OOM |
 | 路徑處理 | pathlib + PIL |
 | 中間結果 | 不儲存 |
-| 平台 | Windows 11 + NVIDIA RTX 3090 24GB |
+| 平台 | Linux + AMD GPU + ROCm 6.2（7800XT / 6700XT 等 8~12GB） |
 | 程式碼註解 | 繁體中文 |
 | basicsr 修補 | 手改套件原始碼（見 1.5） |
 
@@ -75,8 +75,8 @@ sbhead-generater/
   ```bash
   conda create -n sbhead python=3.10 -y
   conda activate sbhead
-  # 依顯卡安裝 PyTorch（NVIDIA）：
-  conda install pytorch=2.2.2 torchvision=0.17.2 pytorch-cuda=11.8 -c pytorch -c nvidia -y
+  # 依顯卡安裝 PyTorch（AMD ROCm 6.2）：
+  pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2
   pip install -r requirements.txt
   ```
 - [x] 1.4 下載 `RealESRGAN_x4plus_anime_6B.pth` 放 `weights/`
@@ -119,7 +119,7 @@ sbhead-generater/
 
 - [x] 2.5 `utils/super_resolution.py` — `upscale_image(image)`
   - 載入 `RealESRGAN_x4plus_anime_6B`（路徑相對 main.py）
-  - 優先使用 CUDA GPU
+  - 優先使用 AMD GPU（ROCm；torch.cuda.* 經 HIP 對應）
   - 執行失敗時 fallback 到 `cv2.resize` 並印警告
 
 - [x] 2.6 **驗證點**：每個模組的 `if __name__ == "__main__":` 區塊單獨測試通過
@@ -152,7 +152,7 @@ sbhead-generater/
 - [x] 4.5 故意餵不存在的路徑，確認錯誤訊息清楚
 - [x] 4.6 故意餵高解析度大圖（裁切後 ≥ 1024），確認跳過 SR 只做 resize
 - [x] 4.7 故意移除權重檔，確認 SR fallback 到 cv2.resize 並印警告
-- [x] 4.8 確認 GPU 正確使用（`nvidia-smi` 確認顯卡運行中）
+- [x] 4.8 確認 GPU 正確使用（`rocm-smi` 確認 AMD 顯卡運行中）
 
 ---
 
@@ -258,14 +258,49 @@ sbhead-generater/
 - [ ] 7.2.2 中裁切（1024 ≤ 裁切 < 4096）：確認跑 1 次 SR + resize 4096
 - [ ] 7.2.3 大裁切（≥ 4096）：確認跳過 SR、raw 與 sr 內容相同
 - [ ] 7.2.4 多臉圖：確認模型仍只載入一次、多次 SR 不會重新載入
-- [ ] 7.2.5 3090 24GB VRAM：
-  - 確認 tile=1024 + fp16 + empty_cache 在三輪 SR（167→668→2672→10688）不會 OOM
-  - 用 nvidia-smi 觀察峰值 VRAM；若意外 OOM 確認 fallback 正常觸發
+- [ ] 7.2.5 AMD 8~12GB VRAM：
+  - 確認 tile=512 + fp16 + empty_cache 在三輪 SR（167→668→2672→10688）不會 OOM
+  - 用 rocm-smi 觀察峰值 VRAM；若意外 OOM 確認 fallback 正常觸發
 - [ ] 7.2.6 檔案大小檢查：確認 PNG 在合理範圍（< 30 MB）
 
 ### 7.3 收尾
 
 - [x] 7.3.1 `git add . && git commit && git push`
+
+---
+
+## 階段 8：AMD GPU 版（Linux + ROCm 6.2）
+
+> 在 `claude/amd-gpu-version-bvqzE` 分支上，把原本 NVIDIA/CUDA/Windows 取向的專案
+> 改為 AMD GPU + Linux + ROCm 6.2 版本。目標顯卡 7800XT / 6700XT 等 8~12GB。
+> ROCm 下 PyTorch 的 `torch.cuda.*` 經 HIP 對應到 AMD GPU，因此核心邏輯改動極小，
+> 主要變動在安裝方式、偵測後端、VRAM 參數與文件。
+
+**變更摘要：**
+- PyTorch 改用 ROCm wheel（`--index-url https://download.pytorch.org/whl/rocm6.2`），不可用 PyPI 預設（CUDA）版
+- `requirements.txt` 移除 torch / torchvision 釘版（改 README 另裝）；`dghs-imgutils` 不裝 `[gpu]`（onnxruntime-gpu 為 CUDA 專用），臉部偵測走 CPU
+- SR tile 1024 → **512**（適配 8~12GB；24GB 才適合 1024）、fp16 維持、每輪 `empty_cache()` 維持（ROCm 下經 HIP 有效）
+- `super_resolution.py` 新增 ROCm/HIP 後端偵測與提示（`torch.version.hip`）
+- README basicsr 手改路徑改 Linux conda env、驗證指令加 `torch.version.hip`、加 `HSA_OVERRIDE_GFX_VERSION` 註解（6700XT/gfx1031）
+- 純 CPU 模組（crop / enhance / avatar_output / main）不動
+
+### 8.1 規格文件同步
+- [x] 8.1.1 `CLAUDE.md`：平台、偵測後端、tile=512、ROCm 決策同步
+- [x] 8.1.2 `PLAN.md`：設計決策表、安裝指令、測試項目同步 + 本階段
+- [x] 8.1.3 `README.md`：ROCm 安裝、HIP 驗證、Linux 路徑、VRAM 說明
+
+### 8.2 程式碼修改
+- [x] 8.2.1 `requirements.txt`：移除 CUDA torch、dghs-imgutils 去 `[gpu]`
+- [x] 8.2.2 `utils/super_resolution.py`：tile=512、ROCm/HIP 偵測提示、docstring
+- [x] 8.2.3 `utils/face_detect.py`：補 CPU 後端說明
+
+### 8.3 端到端測試（使用者本機 AMD 卡驗證）
+- [ ] 8.3.1 環境驗證：`torch.version.hip` 有值、`torch.cuda.is_available()` 為 True
+- [ ] 8.3.2 SR 三輪不 OOM（tile=512 + fp16），`rocm-smi` 觀察峰值
+- [ ] 8.3.3 6700XT 如需 `HSA_OVERRIDE_GFX_VERSION=10.3.0` 確認可跑
+
+### 8.4 收尾
+- [x] 8.4.1 `git add . && git commit && git push`
 
 ---
 
@@ -288,3 +323,4 @@ sbhead-generater/
 - 2026-05-26｜OOM 修正（tile=1024 + fp16 + empty_cache）｜使用者以 debug_oom.py 追蹤確認：fp32×tile=2048 + caching allocator 殘留 → pass #3（輸入 2672×2672）需 16GB 連續空間、3090 24GB 實際可用 12.18GB → OOM。修正：`half=True`（fp16，VRAM 砍半）、`TILE_SIZE = 1024`（移除動態 tile 邏輯）、每輪 SR 後 `torch.cuda.empty_cache()`（釋放殘留）。移除 `_pick_tile_for_size`、`TILE_SAFE_THRESHOLD`、`TILE_SAFE` 三個舊有常數與函式。
 - 2026-05-26｜SR 軟化實驗（raw × α 混合）→ 已 revert｜使用者反映 sr 4096「黑線粗黑、飽和度偏高」，diagnose 為 x4plus_anime_6B GAN baseline 偏好。嘗試在 `save_paired_avatar` 寫檔前以 `SR_BLEND_ALPHA = 0.35` 把 raw 4096 線性混入 sr。實測結果三大問題：(1) 軟過頭、SR 細節被稀釋；(2) raw 本身是 enhance + 傳統 resize、本來就糊，混進去拖累 sr；(3) sr 太像 raw、失去「raw vs sr 對照」的設計使命。冷靜回頭看原 sr 的硬感其實可接受 → 直接 revert 此次 commit，sr 保留純 Real-ESRGAN 輸出。**未來教訓**：要修「SR 硬感」不能用「混回低品質的 raw」這招（兩個版本品質差太多），若日後仍要動，應從「SR 後做 bilateral filter 保邊降噪」或「換 denoise_strength 可調的模型」方向著手，而非加權平均。
 - 2026-05-26｜文件同步至最終版｜將所有文件對齊目前實作（commit `c03d8d4`）：PLAN.md 階段 7.1.3 任務描述改寫為「TILE_SIZE=1024 + fp16 + empty_cache」現況（移除已不適用的「動態 tile size」敘述）；README.md 注意 3 補充 SR pass 次數（小裁切 2–3 次）與目前的 VRAM 管理策略（tile=1024 + fp16 + 每輪 empty_cache）。CLAUDE.md 設計決策表、模組規格與處理流程已隨各次 commit 同步。Changelog 完整保留 v3 全部演進歷程（tile=400→tile=0→tile=2048→tile=1024、fp32→fp16、SR 軟化實驗→revert）作為設計演進軌跡。
+- 2026-05-30｜AMD GPU 版分支（階段 8）｜在 `claude/amd-gpu-version-bvqzE` 分支建立 AMD GPU + Linux + ROCm 6.2 版本（目標 7800XT / 6700XT 等 8~12GB）。ROCm 下 PyTorch `torch.cuda.*` 經 HIP 對應 AMD GPU，核心邏輯幾乎不變。變更：PyTorch 改 ROCm wheel 安裝、`requirements.txt` 移除 torch/torchvision 釘版且 `dghs-imgutils` 去 `[gpu]`（偵測走 CPU）、SR `TILE_SIZE` 1024 → 512（適配中階卡）、`super_resolution.py` 加 ROCm/HIP 後端偵測提示、README 改 Linux 路徑與 HIP 驗證並加 `HSA_OVERRIDE_GFX_VERSION` 註解。設計決策表平台改 Linux+AMD ROCm。歷史 v3 任務描述與 Changelog 保留不動，AMD 變動以階段 8 獨立記錄。端到端測試待使用者本機 AMD 卡驗證。
